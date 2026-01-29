@@ -115,11 +115,11 @@ func checkoutBranch(branch string) error {
 
 func runGrypeScan(target, outputPath string) error {
 	fmt.Printf("Running grype scan on: %s\n", target)
-	
+
 	cmd := exec.Command("grype", target, "-o", "json", "--file", outputPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	// Grype returns non-zero exit code when vulnerabilities are found
 	// We don't want to fail the action in this case, just when grype itself fails
 	err := cmd.Run()
@@ -131,7 +131,7 @@ func runGrypeScan(target, outputPath string) error {
 		}
 		return err
 	}
-	
+
 	fmt.Printf("Grype scan completed successfully\n")
 	return nil
 }
@@ -161,10 +161,10 @@ type Stats struct {
 
 func calculateStats(output *GrypeOutput) Stats {
 	stats := Stats{}
-	
+
 	for _, match := range output.Matches {
 		stats.Total++
-		
+
 		severity := strings.ToLower(match.Vulnerability.Severity)
 		switch severity {
 		case "critical":
@@ -179,7 +179,7 @@ func calculateStats(output *GrypeOutput) Stats {
 			stats.Other++
 		}
 	}
-	
+
 	return stats
 }
 
