@@ -6,7 +6,9 @@ RUN apk add --no-cache git ca-certificates
 WORKDIR /app
 
 # Copy go module files
-COPY go.mod go.sum ./
+COPY go.mod ./
+# Copy go.sum if it exists (not required for modules without dependencies)
+COPY go.su[m] ./ 2>/dev/null || true
 RUN go mod download
 
 # Copy source code
@@ -21,8 +23,10 @@ FROM alpine:latest
 # Install grype and other dependencies
 RUN apk add --no-cache ca-certificates curl bash git
 
-# Install grype
-RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+# Install grype - download and verify script before execution
+RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh -o /tmp/install-grype.sh && \
+    sh /tmp/install-grype.sh -b /usr/local/bin && \
+    rm /tmp/install-grype.sh
 
 # Copy the built application
 COPY --from=builder /app/grype-action /usr/local/bin/grype-action

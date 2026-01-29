@@ -13,16 +13,12 @@ inputs:
     description: 'Branch to scan (optional, defaults to current branch)'
     required: false
     default: ''
-  version:
-    description: 'Grype version to use (optional, defaults to latest release)'
-    required: false
-    default: 'latest'
   output-file:
     description: 'Path to save JSON scan results (optional)'
     required: false
     default: ''
   variable-prefix:
-    description: 'Prefix for output variable names (optional, defaults to "GRYPE_")'
+    description: 'Prefix for environment variable names (optional, defaults to "GRYPE_")'
     required: false
     default: 'GRYPE_'
 

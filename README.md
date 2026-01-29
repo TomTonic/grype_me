@@ -4,10 +4,10 @@ A lean GitHub Action to scan your repository for vulnerabilities using [Anchore 
 
 ## Features
 
-- 🔍 Scans your repository or any specified repository for vulnerabilities
+- 🔍 Scans your repository for vulnerabilities using the latest version of Grype
 - 📊 Provides detailed vulnerability counts by severity (Critical, High, Medium, Low)
 - 🎯 Outputs results as JSON file (optional)
-- 🔧 Configurable output variable names
+- 🔧 Configurable environment variable prefix
 - 🚀 Uses Go for fast execution
 - 📦 Containerized for consistent execution
 
@@ -47,7 +47,6 @@ jobs:
         with:
           repository: '.'
           branch: 'main'
-          version: 'latest'
           output-file: 'grype-results.json'
           variable-prefix: 'SCAN_'
       
@@ -63,7 +62,7 @@ jobs:
       
       - name: Upload scan results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: grype-scan-results
           path: grype-results.json
@@ -73,9 +72,8 @@ jobs:
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `repository` | Repository to scan | No | `.` (current repository) |
-| `branch` | Branch to scan | No | Current branch |
-| `version` | Grype version to use | No | `latest` |
+| `repository` | Repository path to scan (currently only supports "." for current repository) | No | `.` (current repository) |
+| `branch` | Branch to checkout before scanning (only works when repository is ".") | No | Current branch |
 | `output-file` | Path to save JSON scan results | No | `` (no file saved) |
 | `variable-prefix` | Prefix for environment variable names | No | `GRYPE_` |
 
