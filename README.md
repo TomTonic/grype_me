@@ -13,6 +13,8 @@ A lean GitHub Action to scan your repository for vulnerabilities using [Anchore 
 
 ## Usage
 
+> **Quick Start**: Copy [`example-workflow.yml`](example-workflow.yml) to `.github/workflows/` in your repository for a ready-to-use vulnerability scanning setup.
+
 ### Basic Usage
 
 ```yaml

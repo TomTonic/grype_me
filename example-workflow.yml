@@ -1,0 +1,62 @@
+# Example GitHub Actions workflow for scanning with grype_me
+# Copy this file to .github/workflows/ in your repository to use it
+
+name: Vulnerability Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run weekly on Mondays at 9:00 UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run Grype vulnerability scanner
+        id: grype-scan
+        uses: TomTonic/grype_me@v1
+        with:
+          output-file: 'grype-results.json'
+          variable-prefix: 'GRYPE_'
+      
+      - name: Display scan summary
+        run: |
+          echo "### Vulnerability Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Grype Version:** ${{ steps.grype-scan.outputs.grype-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Database Version:** ${{ steps.grype-scan.outputs.db-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Severity | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Critical | ${{ steps.grype-scan.outputs.critical }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| High | ${{ steps.grype-scan.outputs.high }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Medium | ${{ steps.grype-scan.outputs.medium }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Low | ${{ steps.grype-scan.outputs.low }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Total** | **${{ steps.grype-scan.outputs.cve-count }}** |" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grype-scan-results
+          path: grype-results.json
+          retention-days: 30
+      
+      # Optional: Fail the build if critical vulnerabilities are found
+      # Uncomment the following step to enable this behavior
+      # - name: Check for critical vulnerabilities
+      #   if: steps.grype-scan.outputs.critical != '0'
+      #   run: |
+      #     echo "::error::Found ${{ steps.grype-scan.outputs.critical }} critical vulnerabilities!"
+      #     exit 1
