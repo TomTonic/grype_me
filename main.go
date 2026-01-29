@@ -37,10 +37,11 @@ func main() {
 
 func run() error {
 	// Get inputs from environment variables
+	// GitHub Actions converts hyphens in input names to underscores
 	repository := getEnv("INPUT_REPOSITORY", ".")
 	branch := getEnv("INPUT_BRANCH", "")
-	outputFile := getEnv("INPUT_OUTPUT-FILE", "")
-	variablePrefix := getEnv("INPUT_VARIABLE-PREFIX", "GRYPE_")
+	outputFile := getEnv("INPUT_OUTPUT_FILE", "")
+	variablePrefix := getEnv("INPUT_VARIABLE_PREFIX", "GRYPE_")
 
 	fmt.Printf("Starting Grype scan...\n")
 	fmt.Printf("Repository: %s\n", repository)
@@ -107,7 +108,19 @@ func getEnv(key, defaultValue string) string {
 }
 
 func checkoutBranch(branch string) error {
-	cmd := exec.Command("git", "checkout", branch)
+	// Check if git is available
+	if _, err := exec.LookPath("git"); err != nil {
+		return fmt.Errorf("git not found: %w", err)
+	}
+
+	// Check if current directory is a git repository
+	cmd := exec.Command("git", "rev-parse", "--git-dir")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("not a git repository: %w", err)
+	}
+
+	// Checkout the branch
+	cmd = exec.Command("git", "checkout", branch)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
