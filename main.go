@@ -39,14 +39,14 @@ func run() error {
 	// Get inputs from environment variables
 	repository := getEnv("INPUT_REPOSITORY", ".")
 	branch := getEnv("INPUT_BRANCH", "")
-	version := getEnv("INPUT_VERSION", "latest")
 	outputFile := getEnv("INPUT_OUTPUT-FILE", "")
 	variablePrefix := getEnv("INPUT_VARIABLE-PREFIX", "GRYPE_")
 
 	fmt.Printf("Starting Grype scan...\n")
 	fmt.Printf("Repository: %s\n", repository)
-	fmt.Printf("Branch: %s\n", branch)
-	fmt.Printf("Grype version: %s\n", version)
+	if branch != "" {
+		fmt.Printf("Branch: %s\n", branch)
+	}
 
 	// If a specific branch is requested and we're in a git repo, checkout that branch
 	if branch != "" && repository == "." {
