@@ -1,0 +1,49 @@
+name: 'Grype Vulnerability Scanner'
+description: 'Scan your repository for vulnerabilities using Anchore Grype'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  repository:
+    description: 'Repository to scan (optional, defaults to current repository)'
+    required: false
+    default: '.'
+  branch:
+    description: 'Branch to scan (optional, defaults to current branch)'
+    required: false
+    default: ''
+  version:
+    description: 'Grype version to use (optional, defaults to latest release)'
+    required: false
+    default: 'latest'
+  output-file:
+    description: 'Path to save JSON scan results (optional)'
+    required: false
+    default: ''
+  variable-prefix:
+    description: 'Prefix for output variable names (optional, defaults to "GRYPE_")'
+    required: false
+    default: 'GRYPE_'
+
+outputs:
+  grype-version:
+    description: 'Version of Grype used for scanning'
+  db-version:
+    description: 'Version of the Grype vulnerability database'
+  cve-count:
+    description: 'Total number of CVEs found'
+  critical:
+    description: 'Number of critical severity vulnerabilities'
+  high:
+    description: 'Number of high severity vulnerabilities'
+  medium:
+    description: 'Number of medium severity vulnerabilities'
+  low:
+    description: 'Number of low severity vulnerabilities'
+  json-output:
+    description: 'Path to the JSON output file (if output-file was specified)'
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
