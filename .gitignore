@@ -8,6 +8,7 @@
 *.so
 *.dylib
 grype-action
+grype_me
 
 # Test binary, built with `go test -c`
 *.test
