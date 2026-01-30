@@ -463,7 +463,7 @@ func TestEndToEndGrypeScan(t *testing.T) {
 	// Test scanning the current directory (our Go project)
 	// This is a real end-to-end test scanning actual code
 	err := runGrypeScan(".", outputFile)
-	
+
 	// Check if the scan failed due to missing database
 	if err != nil {
 		// Read the output file to see if it contains any data
@@ -550,7 +550,7 @@ func TestEndToEndGrypeScanWithDockerImage(t *testing.T) {
 	// Test scanning alpine:3.7 Docker image (known to have vulnerabilities)
 	// Note: This test may be skipped in CI environments without Docker daemon
 	err := runGrypeScan("alpine:3.7", outputFile)
-	
+
 	// If the scan fails (e.g., no Docker daemon or database), skip the test
 	if err != nil {
 		if _, statErr := os.Stat(outputFile); os.IsNotExist(statErr) {
@@ -583,7 +583,7 @@ func TestEndToEndGrypeScanWithDockerImage(t *testing.T) {
 // Returns false if grype is not available (and skips the test)
 func setupGrype(t *testing.T) bool {
 	t.Helper()
-	
+
 	// Check if grype is available in standard locations
 	grypeCmd := os.Getenv("GRYPE_PATH")
 	if grypeCmd == "" {
