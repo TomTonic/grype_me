@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -37,26 +38,14 @@ func main() {
 	}
 }
 
-// sortStrings sorts a slice of strings in place
-func sortStrings(arr []string) {
-	for i := 0; i < len(arr); i++ {
-		for j := i + 1; j < len(arr); j++ {
-			if arr[i] > arr[j] {
-				arr[i], arr[j] = arr[j], arr[i]
-			}
-		}
-	}
-}
-
 func run() error {
 	// Get inputs from environment variables
 	// GitHub Actions preserves hyphens in input names when setting environment variables
 	// e.g., 'output-file' becomes 'INPUT_OUTPUT-FILE' (not INPUT_OUTPUT_FILE)
 
-	// Sort and display INPUT_* and GITHUB_* environment variables
-	fmt.Printf("=== Environment Variables (sorted) ===\n")
-	var inputVars []string
-	var githubVars []string
+	// Collect and display INPUT_* and GITHUB_* environment variables
+	fmt.Println("=== Environment Variables (sorted) ===")
+	var inputVars, githubVars []string
 	for _, env := range os.Environ() {
 		if strings.HasPrefix(env, "INPUT_") {
 			inputVars = append(inputVars, env)
@@ -64,19 +53,19 @@ func run() error {
 			githubVars = append(githubVars, env)
 		}
 	}
-	// Sort the slices
-	sortStrings(inputVars)
-	sortStrings(githubVars)
-	
-	// Print sorted INPUT_* variables
+
+	// Sort using standard library
+	sort.Strings(inputVars)
+	sort.Strings(githubVars)
+
+	// Print sorted variables
 	for _, v := range inputVars {
 		fmt.Println(v)
 	}
-	// Print sorted GITHUB_* variables
 	for _, v := range githubVars {
 		fmt.Println(v)
 	}
-	fmt.Printf("======================================\n\n")
+	fmt.Println("======================================")
 
 	repository := getEnv("INPUT_REPOSITORY", ".")
 	branch := getEnv("INPUT_BRANCH", "")
