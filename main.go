@@ -255,8 +255,46 @@ func calculateStats(output *GrypeOutput) Stats {
 	return stats
 }
 
+// validatePathInWorkspace ensures the destination path is within the expected workspace directory.
+// This prevents path traversal attacks where malicious input could write files outside
+// the intended directory (e.g., using "../../../etc/passwd").
+// It only validates when a workspace was explicitly used to construct the path.
+func validatePathInWorkspace(dst, workspace string) error {
+	// Clean the paths to resolve any ".." or "." components
+	cleanDst := filepath.Clean(dst)
+	cleanWorkspace := filepath.Clean(workspace)
+
+	// Ensure both paths are absolute for proper comparison
+	absDst, err := filepath.Abs(cleanDst)
+	if err != nil {
+		return fmt.Errorf("failed to resolve destination path: %w", err)
+	}
+
+	absWorkspace, err := filepath.Abs(cleanWorkspace)
+	if err != nil {
+		return fmt.Errorf("failed to resolve workspace path: %w", err)
+	}
+
+	// Check if destination is within workspace using Rel
+	// If the relative path starts with "..", it's outside the workspace
+	rel, err := filepath.Rel(absWorkspace, absDst)
+	if err != nil {
+		return fmt.Errorf("failed to compute relative path: %w", err)
+	}
+
+	// Check if path escapes workspace (contains ".." at the start)
+	if strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+		return fmt.Errorf("path traversal detected: destination %q is outside workspace %q", dst, workspace)
+	}
+
+	return nil
+}
+
 func copyOutputFile(src, dst string) (string, error) {
 	fmt.Printf("[copyOutputFile] src=%s, dst=%s\n", src, dst)
+
+	var workspace string
+	var usedWorkspace bool // Track if we actually used workspace to construct the path
 
 	// If dst is relative and we're in a GitHub Actions environment,
 	// make it relative to the workspace
@@ -264,11 +302,15 @@ func copyOutputFile(src, dst string) (string, error) {
 		// In Docker actions, the workspace is mounted at /github/workspace
 		// Check if we're running in a Docker container action
 		if _, err := os.Stat("/github/workspace"); err == nil {
-			dst = filepath.Join("/github/workspace", dst)
-			fmt.Printf("[copyOutputFile] Using Docker workspace path: %s\n", dst)
-		} else if workspace := os.Getenv("GITHUB_WORKSPACE"); workspace != "" {
-			// Fallback to GITHUB_WORKSPACE for non-Docker actions
+			workspace = "/github/workspace"
 			dst = filepath.Join(workspace, dst)
+			usedWorkspace = true
+			fmt.Printf("[copyOutputFile] Using Docker workspace path: %s\n", dst)
+		} else if ws := os.Getenv("GITHUB_WORKSPACE"); ws != "" {
+			// Fallback to GITHUB_WORKSPACE for non-Docker actions
+			workspace = ws
+			dst = filepath.Join(workspace, dst)
+			usedWorkspace = true
 			fmt.Printf("[copyOutputFile] Using GITHUB_WORKSPACE: %s\n", dst)
 		} else {
 			// Make destination path absolute if not in GitHub Actions
@@ -279,6 +321,15 @@ func copyOutputFile(src, dst string) (string, error) {
 			}
 			fmt.Printf("[copyOutputFile] Using absolute path: %s\n", dst)
 		}
+	}
+
+	// Validate that the destination path is within the workspace (security check)
+	// Only validate if we explicitly used workspace to construct the path
+	if usedWorkspace && workspace != "" {
+		if err := validatePathInWorkspace(dst, workspace); err != nil {
+			return "", fmt.Errorf("security validation failed: %w", err)
+		}
+		fmt.Printf("[copyOutputFile] Path validation passed: destination is within workspace\n")
 	}
 
 	// Ensure directory exists

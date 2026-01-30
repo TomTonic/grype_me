@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -506,6 +507,82 @@ func TestCopyOutputFileWithDockerWorkspace(t *testing.T) {
 	}
 	if string(copiedData) != string(testData) {
 		t.Errorf("copyOutputFile() content mismatch")
+	}
+}
+
+// TestCopyOutputFilePathTraversal tests that path traversal attacks are prevented
+func TestCopyOutputFilePathTraversal(t *testing.T) {
+	// Create source file
+	tmpDir := t.TempDir()
+	srcFile := filepath.Join(tmpDir, "source.json")
+	testData := []byte(`{"test": "data"}`)
+	if err := os.WriteFile(srcFile, testData, 0644); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Create a workspace directory
+	workspace := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("Failed to create workspace: %v", err)
+	}
+
+	// Set GITHUB_WORKSPACE environment variable
+	oldWorkspace := os.Getenv("GITHUB_WORKSPACE")
+	defer func() {
+		if oldWorkspace != "" {
+			os.Setenv("GITHUB_WORKSPACE", oldWorkspace)
+		} else {
+			os.Unsetenv("GITHUB_WORKSPACE")
+		}
+	}()
+	os.Setenv("GITHUB_WORKSPACE", workspace)
+
+	// Test cases with path traversal attempts
+	tests := []struct {
+		name    string
+		dst     string
+		wantErr bool
+	}{
+		{
+			name:    "valid relative path",
+			dst:     "output.json",
+			wantErr: false,
+		},
+		{
+			name:    "valid nested path",
+			dst:     "subdir/output.json",
+			wantErr: false,
+		},
+		{
+			name:    "path traversal with ../",
+			dst:     "../../../etc/passwd",
+			wantErr: true,
+		},
+		{
+			name:    "path traversal to parent",
+			dst:     "../output.json",
+			wantErr: true,
+		},
+		{
+			name:    "path traversal with mixed separators",
+			dst:     "subdir/../../outside.json",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := copyOutputFile(srcFile, tt.dst)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("copyOutputFile() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err != nil && tt.wantErr {
+				// Verify the error message mentions path traversal
+				if !strings.Contains(err.Error(), "path traversal") {
+					t.Errorf("Expected path traversal error, got: %v", err)
+				}
+			}
+		})
 	}
 }
 
