@@ -100,11 +100,11 @@ func run() error {
 		fmt.Printf("Copying output file from %s to %s\n", tmpFilePath, outputFile)
 
 		// Verify source file exists and get its size
-		if info, err := os.Stat(tmpFilePath); err != nil {
+		info, err := os.Stat(tmpFilePath)
+		if err != nil {
 			return fmt.Errorf("source file %s does not exist: %w", tmpFilePath, err)
-		} else {
-			fmt.Printf("Source file size: %d bytes\n", info.Size())
 		}
+		fmt.Printf("Source file size: %d bytes\n", info.Size())
 
 		jsonOutputPath, err = copyOutputFile(tmpFilePath, outputFile)
 		if err != nil {
