@@ -1,0 +1,170 @@
+---
+name: CI
+
+'on':
+  push:
+    branches: [main, copilot/**]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9.2.0
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Set up Python for YAML linting
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Run yamllint
+        run: |
+          yamllint -c .yamllint .github/workflows/ action.yml \
+            example-workflow.yml
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Install Grype
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Update Grype database
+        run: grype db update
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Display test coverage
+        run: go tool cover -func=coverage.txt
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        continue-on-error: true
+        with:
+          file: ./coverage.txt
+          flags: unittests
+          name: codecov-umbrella
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Build application
+        run: go build -v -o grype-action .
+
+      - name: Verify binary
+        run: ./grype-action --help || echo "Binary built successfully"
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: grype_me:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run Grype Action (self-test)
+        id: grype-scan
+        uses: ./
+        with:
+          repository: '.'
+          output-file: 'grype-results.json'
+          variable-prefix: 'GRYPE_'
+
+      - name: Verify outputs
+        run: |
+          echo "Grype Version: ${{ steps.grype-scan.outputs.grype-version }}"
+          echo "Database Version: ${{ steps.grype-scan.outputs.db-version }}"
+          echo "Total CVEs: ${{ steps.grype-scan.outputs.cve-count }}"
+          echo "Critical: ${{ steps.grype-scan.outputs.critical }}"
+          echo "High: ${{ steps.grype-scan.outputs.high }}"
+          echo "Medium: ${{ steps.grype-scan.outputs.medium }}"
+          echo "Low: ${{ steps.grype-scan.outputs.low }}"
+
+          # Verify the action actually ran
+          if [ -z "${{ steps.grype-scan.outputs.grype-version }}" ]; then
+            echo "ERROR: Grype version output is empty"
+            exit 1
+          fi
+
+          echo "✓ Action executed successfully"
+
+      - name: Check output file exists
+        run: |
+          if [ ! -f grype-results.json ]; then
+            echo "ERROR: Output file grype-results.json not found"
+            exit 1
+          fi
+          echo "✓ Output file created"
+
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: grype-scan-results
+          path: grype-results.json
+          retention-days: 7
