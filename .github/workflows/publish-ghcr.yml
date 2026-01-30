@@ -1,0 +1,125 @@
+---
+name: Publish GHCR Image
+
+'on':
+  release:
+    types: [published]
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  ci:
+    name: Run CI
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  grype-release:
+    name: Check Grype Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      grype_version: ${{ steps.check.outputs.grype_version }}
+      publish: ${{ steps.check.outputs.publish }}
+    steps:
+      - name: Determine latest Grype release
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const ownerInfo = await github.rest.users.getByUsername({
+              username: context.repo.owner
+            });
+            const ownerType = ownerInfo.data.type || 'User';
+            const release = await github.rest.repos.getLatestRelease({
+              owner: 'anchore',
+              repo: 'grype'
+            });
+            const grypeVersion = release.data.tag_name.replace(/^v/, '');
+            const tag = `grype-${grypeVersion}`;
+            core.info(`Latest grype release: ${grypeVersion}`);
+
+            const packageName = context.repo.repo;
+            let versions = [];
+            try {
+              const listParams = {
+                package_type: 'container',
+                package_name: packageName,
+                per_page: 100
+              };
+              if (ownerType === 'Organization') {
+                listParams.org = context.repo.owner;
+                versions = await github.paginate(
+                  github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
+                  listParams
+                );
+              } else {
+                listParams.username = context.repo.owner;
+                versions = await github.paginate(
+                  github.rest.packages.getAllPackageVersionsForPackageOwnedByUser,
+                  listParams
+                );
+              }
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+              core.info('No existing GHCR package found yet.');
+            }
+
+            const hasTag = versions.some((version) =>
+              (version.metadata?.container?.tags || []).includes(tag)
+            );
+            core.info(`GHCR tag ${tag} exists: ${hasTag}`);
+            core.setOutput('grype_version', grypeVersion);
+            core.setOutput('publish', hasTag ? 'false' : 'true');
+
+  publish:
+    name: Publish to GHCR
+    runs-on: ubuntu-latest
+    needs: [ci, grype-release]
+    if: github.event_name == 'release' || needs.grype-release.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE_NAME: ghcr.io/${{ github.repository }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare image tags
+        id: tags
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GRYPE_VERSION: ${{ needs.grype-release.outputs.grype_version }}
+        run: |
+          if [ "$EVENT_NAME" = "release" ]; then
+            TAGS="${IMAGE_NAME}:${RELEASE_TAG},${IMAGE_NAME}:latest"
+          else
+            TAGS="${IMAGE_NAME}:grype-${GRYPE_VERSION}"
+          fi
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
