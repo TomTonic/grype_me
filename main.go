@@ -78,13 +78,12 @@ func run() error {
 		fmt.Println("======================================")
 	}
 
-	repository := getEnv("INPUT_REPOSITORY", ".")
-	branch := getEnv("INPUT_BRANCH", "")
+	scan := getEnv("INPUT_SCAN", "head")
 	outputFile := getEnv("INPUT_OUTPUT-FILE", "")
 	variablePrefix := getEnv("INPUT_VARIABLE-PREFIX", "GRYPE_")
 
 	fmt.Printf("Starting Grype scan...\n")
-	fmt.Printf("Repository: %s\n", repository)
+	fmt.Printf("Scan target: %s\n", scan)
 	fmt.Printf("Output file: %s\n", outputFile)
 	fmt.Printf("Variable prefix: %s\n", variablePrefix)
 	fmt.Printf("GITHUB_WORKSPACE: %s\n", os.Getenv("GITHUB_WORKSPACE"))
@@ -95,15 +94,10 @@ func run() error {
 	} else {
 		fmt.Printf("Not in Docker container environment (/github/workspace does not exist)\n")
 	}
-	if branch != "" {
-		fmt.Printf("Branch: %s\n", branch)
-	}
 
-	// If a specific branch is requested and we're in a git repo, checkout that branch
-	if branch != "" && repository == "." {
-		if err := checkoutBranch(branch); err != nil {
-			fmt.Printf("Warning: Could not checkout branch %s: %v\n", branch, err)
-		}
+	// Handle the scan parameter
+	if err := handleScanTarget(scan); err != nil {
+		return fmt.Errorf("failed to prepare scan target: %w", err)
 	}
 
 	// Create a temporary file for grype output
@@ -119,8 +113,8 @@ func run() error {
 		_ = os.Remove(tmpFilePath)
 	}()
 
-	// Run grype scan
-	if err := runGrypeScan(repository, tmpFilePath); err != nil {
+	// Run grype scan on the current directory (we've already checked out the right ref)
+	if err := runGrypeScan(".", tmpFilePath); err != nil {
 		return fmt.Errorf("grype scan failed: %w", err)
 	}
 
@@ -182,7 +176,115 @@ func isDebugEnabled() bool {
 	return strings.EqualFold(value, "true")
 }
 
-func checkoutBranch(branch string) error {
+// handleScanTarget processes the scan input parameter and checks out the appropriate ref.
+// Supported values:
+// - "head": checkout the default branch (main/master)
+// - "latest_release": checkout the latest release tag
+// - any other value: treated as a tag or branch name
+func handleScanTarget(scan string) error {
+	// Normalize the scan value
+	scan = strings.TrimSpace(scan)
+	if scan == "" {
+		scan = "head"
+	}
+
+	fmt.Printf("Processing scan target: %s\n", scan)
+
+	switch strings.ToLower(scan) {
+	case "head":
+		// Checkout the default branch (typically main or master)
+		defaultBranch, err := getDefaultBranch()
+		if err != nil {
+			fmt.Printf("Warning: Could not determine default branch: %v\n", err)
+			// If we can't determine the default branch, we're likely already on it
+			return nil
+		}
+		fmt.Printf("Checking out default branch: %s\n", defaultBranch)
+		return checkoutRef(defaultBranch)
+
+	case "latest_release":
+		// Get and checkout the latest release tag
+		latestTag, err := getLatestReleaseTag()
+		if err != nil {
+			return fmt.Errorf("could not determine latest release: %w", err)
+		}
+		fmt.Printf("Checking out latest release: %s\n", latestTag)
+		return checkoutRef(latestTag)
+
+	default:
+		// Treat as a tag or branch name
+		fmt.Printf("Checking out ref: %s\n", scan)
+		return checkoutRef(scan)
+	}
+}
+
+// getDefaultBranch returns the default branch name (e.g., "main" or "master")
+func getDefaultBranch() (string, error) {
+	// Check if git is available
+	if _, err := exec.LookPath("git"); err != nil {
+		return "", fmt.Errorf("git not found: %w", err)
+	}
+
+	// Check if current directory is a git repository
+	cmd := exec.Command("git", "rev-parse", "--git-dir")
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("not a git repository: %w", err)
+	}
+
+	// Try to get the default branch from origin
+	cmd = exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD")
+	output, err := cmd.Output()
+	if err == nil {
+		// Parse "refs/remotes/origin/main" -> "main"
+		ref := strings.TrimSpace(string(output))
+		parts := strings.Split(ref, "/")
+		if len(parts) > 0 {
+			return parts[len(parts)-1], nil
+		}
+	}
+
+	// Fallback: try common default branch names
+	for _, branch := range []string{"main", "master"} {
+		cmd = exec.Command("git", "rev-parse", "--verify", fmt.Sprintf("refs/heads/%s", branch))
+		if err := cmd.Run(); err == nil {
+			return branch, nil
+		}
+		// Also check remote refs
+		cmd = exec.Command("git", "rev-parse", "--verify", fmt.Sprintf("refs/remotes/origin/%s", branch))
+		if err := cmd.Run(); err == nil {
+			return branch, nil
+		}
+	}
+
+	return "", fmt.Errorf("could not determine default branch")
+}
+
+// getLatestReleaseTag returns the latest release tag in the repository
+func getLatestReleaseTag() (string, error) {
+	// Check if git is available
+	if _, err := exec.LookPath("git"); err != nil {
+		return "", fmt.Errorf("git not found: %w", err)
+	}
+
+	// Get all tags sorted by version (descending)
+	// Using git tag with version sort to get the latest version tag
+	cmd := exec.Command("git", "tag", "--sort=-v:refname")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to list tags: %w", err)
+	}
+
+	tags := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(tags) == 0 || tags[0] == "" {
+		return "", fmt.Errorf("no tags found in repository")
+	}
+
+	// Return the first (latest) tag
+	return tags[0], nil
+}
+
+// checkoutRef checks out a specific git reference (branch, tag, or commit)
+func checkoutRef(ref string) error {
 	// Check if git is available
 	if _, err := exec.LookPath("git"); err != nil {
 		return fmt.Errorf("git not found: %w", err)
@@ -194,8 +296,18 @@ func checkoutBranch(branch string) error {
 		return fmt.Errorf("not a git repository: %w", err)
 	}
 
-	// Checkout the branch
-	cmd = exec.Command("git", "checkout", branch)
+	// Fetch all refs to ensure we have the latest
+	fmt.Printf("Fetching refs...\n")
+	cmd = exec.Command("git", "fetch", "--all", "--tags")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("Warning: Could not fetch refs: %v\n", err)
+		// Continue anyway, the ref might already exist locally
+	}
+
+	// Checkout the ref
+	cmd = exec.Command("git", "checkout", ref)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

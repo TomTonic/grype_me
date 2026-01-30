@@ -28,6 +28,7 @@ jobs:
         id: grype-scan
         uses: TomTonic/grype_me@v1
         with:
+          scan: 'head'
           output-file: 'grype-results.json'
           variable-prefix: 'GRYPE_'
 

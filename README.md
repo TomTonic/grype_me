@@ -57,8 +57,7 @@ jobs:
         id: grype-scan
         uses: TomTonic/grype_me@v1
         with:
-          repository: '.'
-          branch: 'main'
+          scan: 'head'
           output-file: 'grype-results.json'
           variable-prefix: 'SCAN_'
       
@@ -84,8 +83,7 @@ jobs:
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `repository` | Repository path to scan (currently only supports "." for current repository) | No | `.` (current repository) |
-| `branch` | Branch to checkout before scanning (only works when repository is ".") | No | Current branch |
+| `scan` | What to scan: `head` (default branch), `latest_release` (latest release tag), or a specific tag/branch name | No | `head` |
 | `output-file` | Path to save JSON scan results | No | `` (no file saved) |
 | `variable-prefix` | Prefix for environment variable names | No | `GRYPE_` |
 | `debug` | Print INPUT_/GITHUB_ environment variables when `true` (warning: may expose sensitive data in logs) | No | `false` |
