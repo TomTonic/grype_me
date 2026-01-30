@@ -106,6 +106,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Resolve latest Go Alpine tag
+        id: go-alpine
+        run: |
+          set -euo pipefail
+          api_url="https://registry.hub.docker.com/v2/repositories/library/golang/tags"
+          latest_tag="$(curl -sSfL --get "$api_url" \
+            --data-urlencode "name=alpine" \
+            --data-urlencode "ordering=last_updated" \
+            --data-urlencode "page_size=100" \
+            | jq -r \
+              --arg regex '^[0-9]+\\.[0-9]+\\.[0-9]+-alpine[0-9]+\\.[0-9]+(\\.[0-9]+)?$' \
+              '.results | map(select(.name | test($regex))) | sort_by(.last_updated) | last | .name')"
+          if [ -z "$latest_tag" ] || [ "$latest_tag" = "null" ]; then
+            echo "Failed to resolve latest golang-alpine tag" >&2
+            exit 1
+          fi
+          alpine_version="${latest_tag##*-alpine}"
+          if [ -z "$alpine_version" ]; then
+            echo "Failed to derive alpine version from tag: $latest_tag" >&2
+            exit 1
+          fi
+          echo "golang_alpine_tag=$latest_tag" >> "$GITHUB_OUTPUT"
+          echo "alpine_version=$alpine_version" >> "$GITHUB_OUTPUT"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -115,6 +139,9 @@ jobs:
           context: .
           push: false
           tags: grype_me:test
+          build-args: |
+            GOLANG_ALPINE_TAG=${{ steps.go-alpine.outputs.golang_alpine_tag }}
+            ALPINE_VERSION=${{ steps.go-alpine.outputs.alpine_version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
