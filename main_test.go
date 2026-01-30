@@ -62,6 +62,53 @@ func TestGetEnv(t *testing.T) {
 	}
 }
 
+func TestIsDebugEnabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		want     bool
+	}{
+		{
+			name:     "debug true",
+			envValue: "true",
+			want:     true,
+		},
+		{
+			name:     "debug true mixed case",
+			envValue: "TrUe",
+			want:     true,
+		},
+		{
+			name:     "debug false",
+			envValue: "false",
+			want:     false,
+		},
+		{
+			name:     "debug empty",
+			envValue: "",
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				_ = os.Setenv("INPUT_DEBUG", tt.envValue)
+				defer func() {
+					_ = os.Unsetenv("INPUT_DEBUG")
+				}()
+			} else {
+				_ = os.Unsetenv("INPUT_DEBUG")
+			}
+
+			got := isDebugEnabled()
+			if got != tt.want {
+				t.Errorf("isDebugEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestCalculateStats tests the calculateStats function
 func TestCalculateStats(t *testing.T) {
 	tests := []struct {

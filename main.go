@@ -44,28 +44,30 @@ func run() error {
 	// e.g., 'output-file' becomes 'INPUT_OUTPUT-FILE' (not INPUT_OUTPUT_FILE)
 
 	// Collect and display INPUT_* and GITHUB_* environment variables
-	fmt.Println("=== Environment Variables (sorted) ===")
-	var inputVars, githubVars []string
-	for _, env := range os.Environ() {
-		if strings.HasPrefix(env, "INPUT_") {
-			inputVars = append(inputVars, env)
-		} else if strings.HasPrefix(env, "GITHUB_") {
-			githubVars = append(githubVars, env)
+	if isDebugEnabled() {
+		fmt.Println("=== Environment Variables (sorted) ===")
+		var inputVars, githubVars []string
+		for _, env := range os.Environ() {
+			if strings.HasPrefix(env, "INPUT_") {
+				inputVars = append(inputVars, env)
+			} else if strings.HasPrefix(env, "GITHUB_") {
+				githubVars = append(githubVars, env)
+			}
 		}
-	}
 
-	// Sort using standard library
-	sort.Strings(inputVars)
-	sort.Strings(githubVars)
+		// Sort using standard library
+		sort.Strings(inputVars)
+		sort.Strings(githubVars)
 
-	// Print sorted variables
-	for _, v := range inputVars {
-		fmt.Println(v)
+		// Print sorted variables
+		for _, v := range inputVars {
+			fmt.Println(v)
+		}
+		for _, v := range githubVars {
+			fmt.Println(v)
+		}
+		fmt.Println("======================================")
 	}
-	for _, v := range githubVars {
-		fmt.Println(v)
-	}
-	fmt.Println("======================================")
 
 	repository := getEnv("INPUT_REPOSITORY", ".")
 	branch := getEnv("INPUT_BRANCH", "")
@@ -164,6 +166,10 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func isDebugEnabled() bool {
+	return strings.EqualFold(getEnv("INPUT_DEBUG", "false"), "true")
 }
 
 func checkoutBranch(branch string) error {
