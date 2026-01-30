@@ -1,3 +1,4 @@
+---
 name: 'Grype Vulnerability Scanner'
 description: 'Scan your repository for vulnerabilities using Anchore Grype'
 branding:
@@ -18,7 +19,9 @@ inputs:
     required: false
     default: ''
   variable-prefix:
-    description: 'Prefix for environment variable names (optional, defaults to "GRYPE_")'
+    description: >-
+      Prefix for environment variable names
+      (optional, defaults to "GRYPE_")
     required: false
     default: 'GRYPE_'
 
