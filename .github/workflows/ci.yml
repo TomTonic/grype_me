@@ -111,26 +111,50 @@ jobs:
         run: |
           set -euo pipefail
           api_url="https://registry.hub.docker.com/v2/repositories/library/golang/tags"
+          regex='^[0-9]+\\.[0-9]+\\.[0-9]+-alpine[0-9]+\\.[0-9]+(\\.[0-9]+)?$'
+          capture_regex='^(?<go>[0-9]+\\.[0-9]+\\.[0-9]+)-alpine(?<alpine>[0-9]+\\.[0-9]+(\\.[0-9]+)?)$'
           latest_tag="$(curl -sSfL --retry 3 --retry-delay 5 --max-time 30 \
             --get "$api_url" \
             --data-urlencode "name=alpine" \
             --data-urlencode "ordering=last_updated" \
-            --data-urlencode "page_size=200" \
+            --data-urlencode "page_size=100" \
             | jq -r \
-              --arg regex '^[0-9]+\\.[0-9]+\\.[0-9]+-alpine[0-9]+\\.[0-9]+(\\.[0-9]+)?$' \
-              '.results | map(select(.name | test($regex))) | first | .name')"
-          if [ -z "$latest_tag" ] || [ "$latest_tag" = "null" ]; then
-            echo "Failed to resolve latest golang-alpine tag" >&2
+              --arg regex "$regex" \
+              --arg capture "$capture_regex" \
+              '.results
+              | map(select(.name | test($regex)))
+              | map(. + (.name | capture($capture)))
+              | map(. + {
+                  go_parts: (.go | split(".") | map(tonumber)),
+                  alpine_parts: (
+                    .alpine | split(".") | map(tonumber)
+                    | if length == 2 then . + [0] else . end
+                  )
+                })
+              | sort_by(.go_parts + .alpine_parts)
+              | last
+              | .name')" || {
+            echo "Failed to parse Docker Hub tag response" >&2
             exit 1
+          }
+          if [ -z "$latest_tag" ] || [ "$latest_tag" = "null" ]; then
+            echo "Failed to resolve latest golang-alpine tag; using defaults" >&2
+            latest_tag="1.25.6-alpine3.23"
           fi
+          echo "Resolved golang-alpine tag: $latest_tag"
           alpine_version="${latest_tag##*-alpine}"
           if [ "${alpine_version#*.*.*}" != "$alpine_version" ]; then
             alpine_version="${alpine_version%.*}"
           fi
-          if [ -z "$alpine_version" ]; then
-            echo "Failed to derive alpine version from tag: $latest_tag" >&2
-            exit 1
+          if ! [[ "$alpine_version" =~ ^[0-9]+\\.[0-9]+(\\.[0-9]+)?$ ]]; then
+            echo "Derived Alpine version is invalid: $alpine_version; using defaults" >&2
+            alpine_version="3.23"
           fi
+          if [ -z "$alpine_version" ]; then
+            echo "Failed to derive alpine version from tag: $latest_tag; using defaults" >&2
+            alpine_version="3.23"
+          fi
+          echo "Derived Alpine version: $alpine_version"
           echo "golang_alpine_tag=$latest_tag" >> "$GITHUB_OUTPUT"
           echo "alpine_version=$alpine_version" >> "$GITHUB_OUTPUT"
 
