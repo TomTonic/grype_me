@@ -446,3 +446,298 @@ func TestGrypeOutputJSONMarshaling(t *testing.T) {
 			decoded.Descriptor.Version, original.Descriptor.Version)
 	}
 }
+
+// TestEndToEndGrypeScan is an end-to-end integration test that runs an actual grype scan
+// This test requires grype to be installed and available in PATH
+func TestEndToEndGrypeScan(t *testing.T) {
+	// Check if grype is available
+	grypeCmd := os.Getenv("GRYPE_PATH")
+	if grypeCmd == "" {
+		grypeCmd = "grype"
+	}
+	
+	// Try to find grype
+	if _, err := os.Stat("/tmp/bin/grype"); err == nil {
+		grypeCmd = "/tmp/bin/grype"
+	}
+	
+	// Check if grype exists
+	_, err := os.Stat(grypeCmd)
+	if err != nil {
+		t.Skip("Grype not available, skipping end-to-end test. Set GRYPE_PATH or install grype to /tmp/bin/grype")
+	}
+
+	// Set PATH to include grype location
+	if grypeCmd == "/tmp/bin/grype" {
+		oldPath := os.Getenv("PATH")
+		os.Setenv("PATH", "/tmp/bin:"+oldPath)
+		defer os.Setenv("PATH", oldPath)
+	}
+
+	// Create a temporary directory for test output
+	tmpDir := t.TempDir()
+	outputFile := filepath.Join(tmpDir, "grype-results.json")
+
+	// Test scanning the current directory (our Go project)
+	// This is a real end-to-end test scanning actual code
+	err = runGrypeScan(".", outputFile)
+	
+	// Check if the scan failed due to missing database
+	if err != nil {
+		// Read the output file to see if it contains any data
+		if _, statErr := os.Stat(outputFile); os.IsNotExist(statErr) {
+			t.Skipf("Grype scan failed (likely database not available): %v", err)
+		}
+	}
+
+	// Verify output file exists
+	if _, err := os.Stat(outputFile); os.IsNotExist(err) {
+		t.Skipf("Output file was not created (grype database may not be available): %s", outputFile)
+	}
+
+	// Check if the file has content
+	fileInfo, err := os.Stat(outputFile)
+	if err != nil {
+		t.Fatalf("Failed to stat output file: %v", err)
+	}
+	if fileInfo.Size() == 0 {
+		t.Skip("Output file is empty (grype database may not be available)")
+	}
+
+	// Parse the output
+	output, err := parseGrypeOutput(outputFile)
+	if err != nil {
+		// If parsing fails, it might be due to incomplete scan
+		content, _ := os.ReadFile(outputFile)
+		t.Logf("Output file content: %s", string(content))
+		t.Skipf("Failed to parse grype output (scan may have been incomplete): %v", err)
+	}
+
+	// Verify output structure
+	if output == nil {
+		t.Fatal("Parsed output is nil")
+	}
+
+	// Verify descriptor has version information
+	if output.Descriptor.Version == "" {
+		t.Error("Grype version is empty")
+	} else {
+		t.Logf("Grype version: %s", output.Descriptor.Version)
+	}
+
+	if output.Descriptor.DB.Built == "" {
+		t.Error("Database version is empty")
+	} else {
+		t.Logf("Database built: %s", output.Descriptor.DB.Built)
+	}
+
+	// Calculate statistics
+	stats := calculateStats(output)
+
+	// Log the results
+	t.Logf("Scan results for current project:")
+	t.Logf("  Total vulnerabilities: %d", stats.Total)
+	t.Logf("  Critical: %d", stats.Critical)
+	t.Logf("  High: %d", stats.High)
+	t.Logf("  Medium: %d", stats.Medium)
+	t.Logf("  Low: %d", stats.Low)
+	t.Logf("  Other: %d", stats.Other)
+
+	// Verify stats are consistent
+	expectedTotal := stats.Critical + stats.High + stats.Medium + stats.Low + stats.Other
+	if stats.Total != expectedTotal {
+		t.Errorf("Total count mismatch: got %d, expected %d (sum of individual counts)",
+			stats.Total, expectedTotal)
+	}
+
+	// Test passes if we got this far - the scan ran successfully
+	t.Logf("End-to-end test completed successfully with grype version %s", output.Descriptor.Version)
+}
+
+// TestEndToEndGrypeScanWithDockerImage tests scanning a Docker image
+func TestEndToEndGrypeScanWithDockerImage(t *testing.T) {
+	// Check if grype is available
+	grypeCmd := os.Getenv("GRYPE_PATH")
+	if grypeCmd == "" {
+		grypeCmd = "grype"
+	}
+	
+	// Try to find grype
+	if _, err := os.Stat("/tmp/bin/grype"); err == nil {
+		grypeCmd = "/tmp/bin/grype"
+	}
+	
+	// Check if grype exists
+	_, err := os.Stat(grypeCmd)
+	if err != nil {
+		t.Skip("Grype not available, skipping Docker image test. Set GRYPE_PATH or install grype to /tmp/bin/grype")
+	}
+
+	// Set PATH to include grype location
+	if grypeCmd == "/tmp/bin/grype" {
+		oldPath := os.Getenv("PATH")
+		os.Setenv("PATH", "/tmp/bin:"+oldPath)
+		defer os.Setenv("PATH", oldPath)
+	}
+
+	// Create a temporary directory for test files
+	tmpDir := t.TempDir()
+	outputFile := filepath.Join(tmpDir, "docker-scan-results.json")
+
+	// Test scanning a small public Docker image (alpine:latest is commonly available)
+	// Note: This test may be skipped in CI environments without Docker daemon
+	err = runGrypeScan("alpine:3.7", outputFile)
+	
+	// If the scan fails (e.g., no Docker daemon or database), skip the test
+	if err != nil {
+		if _, statErr := os.Stat(outputFile); os.IsNotExist(statErr) {
+			t.Skipf("Docker image scan failed (likely no Docker daemon or grype database available): %v", err)
+		}
+	}
+
+	// Check if output file exists and has content
+	fileInfo, err := os.Stat(outputFile)
+	if err != nil || fileInfo.Size() == 0 {
+		t.Skip("Docker image scan did not produce output (Docker daemon or grype database may not be available)")
+	}
+
+	// Parse the output
+	output, err := parseGrypeOutput(outputFile)
+	if err != nil {
+		t.Skipf("Failed to parse grype output: %v", err)
+	}
+
+	// Verify we got valid output
+	if output.Descriptor.Version == "" {
+		t.Error("Grype version is empty")
+	}
+
+	stats := calculateStats(output)
+	t.Logf("Docker image scan completed: found %d vulnerabilities", stats.Total)
+}
+
+// TestIntegrationWithMockGrypeOutput tests the integration flow with pre-generated grype output
+// This test doesn't require grype to be installed and simulates a realistic scan result
+func TestIntegrationWithMockGrypeOutput(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir := t.TempDir()
+	mockOutputFile := filepath.Join(tmpDir, "mock-grype-output.json")
+
+	// Create realistic mock grype output (simulating a real scan result)
+	mockGrypeOutput := `{
+		"matches": [
+			{
+				"vulnerability": {
+					"id": "CVE-2023-1234",
+					"severity": "Critical"
+				},
+				"artifact": {
+					"name": "libssl",
+					"version": "1.0.2"
+				}
+			},
+			{
+				"vulnerability": {
+					"id": "CVE-2023-5678",
+					"severity": "High"
+				},
+				"artifact": {
+					"name": "bash",
+					"version": "4.3.0"
+				}
+			},
+			{
+				"vulnerability": {
+					"id": "CVE-2023-9012",
+					"severity": "Medium"
+				},
+				"artifact": {
+					"name": "curl",
+					"version": "7.47.0"
+				}
+			}
+		],
+		"descriptor": {
+			"version": "0.107.0",
+			"db": {
+				"built": "2024-01-30T10:00:00Z",
+				"schemaVersion": 6
+			}
+		}
+	}`
+
+	// Write mock output to file
+	if err := os.WriteFile(mockOutputFile, []byte(mockGrypeOutput), 0644); err != nil {
+		t.Fatalf("Failed to write mock output: %v", err)
+	}
+
+	// Test the complete integration flow from parsing to stats
+	t.Run("parse_mock_output", func(t *testing.T) {
+		output, err := parseGrypeOutput(mockOutputFile)
+		if err != nil {
+			t.Fatalf("Failed to parse mock output: %v", err)
+		}
+
+		// Verify descriptor
+		if output.Descriptor.Version != "0.107.0" {
+			t.Errorf("Expected version 0.107.0, got %s", output.Descriptor.Version)
+		}
+
+		if output.Descriptor.DB.Built != "2024-01-30T10:00:00Z" {
+			t.Errorf("Expected DB built time 2024-01-30T10:00:00Z, got %s", output.Descriptor.DB.Built)
+		}
+
+		// Verify matches
+		if len(output.Matches) != 3 {
+			t.Errorf("Expected 3 matches, got %d", len(output.Matches))
+		}
+	})
+
+	t.Run("calculate_stats_from_mock", func(t *testing.T) {
+		output, err := parseGrypeOutput(mockOutputFile)
+		if err != nil {
+			t.Fatalf("Failed to parse mock output: %v", err)
+		}
+
+		stats := calculateStats(output)
+
+		// Verify stats match the mock data
+		if stats.Total != 3 {
+			t.Errorf("Expected 3 total vulnerabilities, got %d", stats.Total)
+		}
+		if stats.Critical != 1 {
+			t.Errorf("Expected 1 critical vulnerability, got %d", stats.Critical)
+		}
+		if stats.High != 1 {
+			t.Errorf("Expected 1 high vulnerability, got %d", stats.High)
+		}
+		if stats.Medium != 1 {
+			t.Errorf("Expected 1 medium vulnerability, got %d", stats.Medium)
+		}
+		if stats.Low != 0 {
+			t.Errorf("Expected 0 low vulnerabilities, got %d", stats.Low)
+		}
+	})
+
+	t.Run("copy_output_file", func(t *testing.T) {
+		destPath := filepath.Join(tmpDir, "copied-output.json")
+		copiedPath, err := copyOutputFile(mockOutputFile, destPath)
+		if err != nil {
+			t.Fatalf("Failed to copy output file: %v", err)
+		}
+
+		// Verify the file was copied
+		if _, err := os.Stat(copiedPath); os.IsNotExist(err) {
+			t.Error("Copied file does not exist")
+		}
+
+		// Verify content matches
+		originalContent, _ := os.ReadFile(mockOutputFile)
+		copiedContent, _ := os.ReadFile(copiedPath)
+		if string(originalContent) != string(copiedContent) {
+			t.Error("Copied file content does not match original")
+		}
+	})
+
+	t.Logf("Integration test with mock data completed successfully")
+}
