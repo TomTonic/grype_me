@@ -123,7 +123,7 @@ In addition to the outputs, the action sets environment variables with a configu
 
 ### Code Review: Simplicity & Robustness
 
-The codebase is intentionally small and direct, centered around a single Go entrypoint that orchestrates scanning, parsing, statistics, and output handling. Simplicity is preserved by limiting configuration to a few inputs, using standard library utilities for sorting, JSON parsing, and filesystem operations, and keeping the data model tightly scoped to Grype's output schema.
+The codebase is intentionally small and direct, centered around a single Go entry point that orchestrates scanning, parsing, statistics, and output handling. Simplicity is preserved by limiting configuration to a few inputs, using standard library utilities for sorting, JSON parsing, and filesystem operations, and keeping the data model tightly scoped to Grype's output schema.
 
 Robustness is addressed through explicit error handling at each step, graceful handling of Grype's non-zero exit codes when vulnerabilities are found, and defensive file operations. The output-file copy path enforces workspace-based path traversal protection, and tests cover JSON parsing, severity aggregation, and file handling edge cases. The CI workflows add additional safety by running linting, unit tests, integration tests, and an end-to-end action run.
 
