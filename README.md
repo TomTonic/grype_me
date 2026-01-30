@@ -142,6 +142,12 @@ Runs on every push and pull request:
 
 Tests the actual GitHub Action in a real workflow environment.
 
+#### Publish Workflow (`.github/workflows/publish-ghcr.yml`)
+
+Publishes the action's Docker image to GHCR after the CI workflow succeeds. It
+runs on new releases of this repository and on a schedule to detect new Grype
+releases.
+
 ### Running Tests Locally
 
 ```bash
