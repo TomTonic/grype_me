@@ -9,7 +9,17 @@ A lean GitHub Action to scan your repository for vulnerabilities using [Anchore 
 - 🎯 Outputs results as JSON file (optional)
 - 🔧 Configurable environment variable prefix
 - 🚀 Uses Go for fast execution
-- 📦 Containerized for consistent execution
+- 📦 Containerized for consistent execution across environments
+- ⏰ Supports scheduled scans (e.g., weekly security checks)
+
+## How It Works
+
+This action runs inside a Docker container with Grype pre-installed. When executed:
+
+1. The action container mounts your repository at `/github/workspace`
+2. Grype scans the repository for known vulnerabilities in dependencies
+3. Results are parsed and categorized by severity
+4. Vulnerability counts are exported as action outputs and environment variables
 
 ## Usage
 
