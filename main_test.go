@@ -322,7 +322,9 @@ func TestParseGrypeOutput(t *testing.T) {
 				"descriptor": {
 					"version": "0.65.0",
 					"db": {
-						"built": "2024-01-30T10:00:00Z"
+						"status": {
+							"built": "2024-01-30T10:00:00Z"
+						}
 					}
 				}
 			}`,
@@ -342,14 +344,24 @@ func TestParseGrypeOutput(t *testing.T) {
 				Descriptor: struct {
 					Version string `json:"version"`
 					DB      struct {
-						Built string `json:"built"`
+						Built  string `json:"built,omitempty"`
+						Status struct {
+							Built string `json:"built,omitempty"`
+						} `json:"status,omitempty"`
 					} `json:"db"`
 				}{
 					Version: "0.65.0",
 					DB: struct {
-						Built string `json:"built"`
+						Built  string `json:"built,omitempty"`
+						Status struct {
+							Built string `json:"built,omitempty"`
+						} `json:"status,omitempty"`
 					}{
-						Built: "2024-01-30T10:00:00Z",
+						Status: struct {
+							Built string `json:"built,omitempty"`
+						}{
+							Built: "2024-01-30T10:00:00Z",
+						},
 					},
 				},
 			},
@@ -678,7 +690,10 @@ func TestGrypeOutputJSONMarshaling(t *testing.T) {
 		Descriptor: struct {
 			Version string `json:"version"`
 			DB      struct {
-				Built string `json:"built"`
+				Built  string `json:"built,omitempty"`
+				Status struct {
+					Built string `json:"built,omitempty"`
+				} `json:"status,omitempty"`
 			} `json:"db"`
 		}{
 			Version: "0.65.0",
@@ -767,10 +782,10 @@ func TestEndToEndGrypeScan(t *testing.T) {
 		t.Logf("Grype version: %s", output.Descriptor.Version)
 	}
 
-	if output.Descriptor.DB.Built == "" {
+	if output.DBBuilt() == "" {
 		t.Logf("Database built info not available (this is expected in some environments)")
 	} else {
-		t.Logf("Database built: %s", output.Descriptor.DB.Built)
+		t.Logf("Database built: %s", output.DBBuilt())
 	}
 
 	// Calculate statistics
@@ -915,8 +930,10 @@ func TestIntegrationWithMockGrypeOutput(t *testing.T) {
 		"descriptor": {
 			"version": "0.107.0",
 			"db": {
-				"built": "2024-01-30T10:00:00Z",
-				"schemaVersion": 6
+				"status": {
+					"built": "2024-01-30T10:00:00Z",
+					"schemaVersion": 6
+				}
 			}
 		}
 	}`
@@ -938,8 +955,8 @@ func TestIntegrationWithMockGrypeOutput(t *testing.T) {
 			t.Errorf("Expected version 0.107.0, got %s", output.Descriptor.Version)
 		}
 
-		if output.Descriptor.DB.Built != "2024-01-30T10:00:00Z" {
-			t.Errorf("Expected DB built time 2024-01-30T10:00:00Z, got %s", output.Descriptor.DB.Built)
+		if output.DBBuilt() != "2024-01-30T10:00:00Z" {
+			t.Errorf("Expected DB built time 2024-01-30T10:00:00Z, got %s", output.DBBuilt())
 		}
 
 		// Verify matches

@@ -26,9 +26,24 @@ type GrypeOutput struct {
 	Descriptor struct {
 		Version string `json:"version"`
 		DB      struct {
-			Built string `json:"built"`
+			// Older grype outputs exposed the built timestamp at descriptor.db.built.
+			Built string `json:"built,omitempty"`
+			// Newer grype outputs (e.g. 0.106+) expose it at descriptor.db.status.built.
+			Status struct {
+				Built string `json:"built,omitempty"`
+			} `json:"status,omitempty"`
 		} `json:"db"`
 	} `json:"descriptor"`
+}
+
+func (o *GrypeOutput) DBBuilt() string {
+	if o == nil {
+		return ""
+	}
+	if built := o.Descriptor.DB.Status.Built; built != "" {
+		return built
+	}
+	return o.Descriptor.DB.Built
 }
 
 func main() {
@@ -380,9 +395,10 @@ func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath string
 	}()
 
 	// Write standard outputs
+	dbBuilt := output.DBBuilt()
 	outputs := map[string]string{
 		"grype-version": output.Descriptor.Version,
-		"db-version":    output.Descriptor.DB.Built,
+		"db-version":    dbBuilt,
 		"cve-count":     fmt.Sprintf("%d", stats.Total),
 		"critical":      fmt.Sprintf("%d", stats.Critical),
 		"high":          fmt.Sprintf("%d", stats.High),
@@ -413,7 +429,7 @@ func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath string
 
 		envVars := map[string]string{
 			"VERSION":    output.Descriptor.Version,
-			"DB_VERSION": output.Descriptor.DB.Built,
+			"DB_VERSION": dbBuilt,
 			"CVE_COUNT":  fmt.Sprintf("%d", stats.Total),
 			"CRITICAL":   fmt.Sprintf("%d", stats.Critical),
 			"HIGH":       fmt.Sprintf("%d", stats.High),
@@ -435,7 +451,7 @@ func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath string
 func printSummary(stats Stats, output *GrypeOutput) {
 	fmt.Println("\n=== Grype Scan Summary ===")
 	fmt.Printf("Grype Version: %s\n", output.Descriptor.Version)
-	fmt.Printf("Database Version: %s\n", output.Descriptor.DB.Built)
+	fmt.Printf("Database Version: %s\n", output.DBBuilt())
 	fmt.Printf("\nVulnerabilities Found:\n")
 	fmt.Printf("  Total:    %d\n", stats.Total)
 	fmt.Printf("  Critical: %d\n", stats.Critical)
