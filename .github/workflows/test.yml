@@ -1,0 +1,49 @@
+---
+name: End-to-End Test
+
+'on':
+  push:
+    branches: [main, copilot/**]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  e2e-test-action:
+    name: E2E Test - Action
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run Grype vulnerability scanner
+        id: grype-scan
+        uses: ./
+        with:
+          repository: '.'
+          output-file: 'grype-results.json'
+          variable-prefix: 'GRYPE_'
+
+      - name: Display scan results
+        run: |
+          echo "Grype Version: ${{ steps.grype-scan.outputs.grype-version }}"
+          echo "Database Version: ${{ steps.grype-scan.outputs.db-version }}"
+          echo "Total CVEs: ${{ steps.grype-scan.outputs.cve-count }}"
+          echo "Critical: ${{ steps.grype-scan.outputs.critical }}"
+          echo "High: ${{ steps.grype-scan.outputs.high }}"
+          echo "Medium: ${{ steps.grype-scan.outputs.medium }}"
+          echo "Low: ${{ steps.grype-scan.outputs.low }}"
+          echo "Environment variables:"
+          echo "GRYPE_VERSION: $GRYPE_VERSION"
+          echo "GRYPE_DB_VERSION: $GRYPE_DB_VERSION"
+          echo "GRYPE_CVE_COUNT: $GRYPE_CVE_COUNT"
+
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: grype-scan-results
+          path: grype-results.json
+          retention-days: 7
