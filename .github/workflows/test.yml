@@ -1,10 +1,11 @@
+---
 name: Test Grype Action
 
-on:
+'on':
   push:
-    branches: [ main, copilot/** ]
+    branches: [main, copilot/**]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -15,7 +16,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Run Grype vulnerability scanner
         id: grype-scan
         uses: ./
@@ -23,7 +24,7 @@ jobs:
           repository: '.'
           output-file: 'grype-results.json'
           variable-prefix: 'GRYPE_'
-      
+
       - name: Display scan results
         run: |
           echo "Grype Version: ${{ steps.grype-scan.outputs.grype-version }}"
@@ -37,7 +38,7 @@ jobs:
           echo "GRYPE_VERSION: $GRYPE_VERSION"
           echo "GRYPE_DB_VERSION: $GRYPE_DB_VERSION"
           echo "GRYPE_CVE_COUNT: $GRYPE_CVE_COUNT"
-      
+
       - name: Upload scan results
         if: always()
         uses: actions/upload-artifact@v4
