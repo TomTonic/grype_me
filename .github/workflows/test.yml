@@ -1,5 +1,5 @@
 ---
-name: Test Grype Action
+name: End-to-End Test
 
 'on':
   push:
@@ -9,7 +9,8 @@ name: Test Grype Action
   workflow_dispatch:
 
 jobs:
-  test-action:
+  e2e-test-action:
+    name: E2E Test - Action
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -45,3 +46,4 @@ jobs:
         with:
           name: grype-scan-results
           path: grype-results.json
+          retention-days: 7

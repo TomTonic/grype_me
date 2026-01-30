@@ -119,6 +119,71 @@ In addition to the outputs, the action sets environment variables with a configu
     fi
 ```
 
+## Development
+
+### CI/CD Workflows
+
+This repository includes comprehensive CI/CD workflows to ensure code quality:
+
+#### CI Workflow (`.github/workflows/ci.yml`)
+
+Runs on every push and pull request:
+
+- **Lint**: Checks code formatting with `go fmt`, `go vet`, `staticcheck`, and `yamllint`
+- **Test**: Runs all unit and integration tests with coverage reporting
+  - Installs grype and updates the vulnerability database
+  - Runs tests with race detection enabled
+  - Generates coverage reports
+- **Build**: Verifies the Go application builds successfully
+- **Docker Build**: Validates the Docker image can be built
+- **Integration Test**: Runs the action against itself to verify end-to-end functionality
+
+#### End-to-End Test Workflow (`.github/workflows/test.yml`)
+
+Tests the actual GitHub Action in a real workflow environment.
+
+### Running Tests Locally
+
+```bash
+# Install dependencies
+go mod download
+
+# Run all tests
+go test -v ./...
+
+# Run tests with coverage
+go test -v -coverprofile=coverage.txt ./...
+go tool cover -html=coverage.txt
+
+# Run only unit tests (skip e2e tests requiring grype)
+go test -v -short ./...
+
+# Install grype for e2e tests
+curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+grype db update
+
+# Run all tests including e2e
+go test -v ./...
+```
+
+### Linting
+
+```bash
+# Format code
+go fmt ./...
+
+# Run go vet
+go vet ./...
+
+# Install and run staticcheck
+go install honnef.co/go/tools/cmd/staticcheck@latest
+staticcheck ./...
+
+# Lint YAML files
+pip install yamllint
+yamllint -c .yamllint .github/workflows/ action.yml example-workflow.yml
+```
+
 ## License
 
 This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.
