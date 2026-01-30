@@ -37,30 +37,51 @@ func main() {
 	}
 }
 
-func run() error {
-	// Get inputs from environment variables
-	// GitHub Actions converts hyphens in input names to underscores
-	// e.g., 'output-file' becomes 'INPUT_OUTPUT_FILE'
-
-	fmt.Printf("=== Full Environment Variable Dump (INPUT_* and GITHUB_*) ===\n")
-	for _, env := range os.Environ() {
-		if strings.HasPrefix(env, "INPUT_") || strings.HasPrefix(env, "GITHUB_") {
-			fmt.Println(env)
+// sortStrings sorts a slice of strings in place
+func sortStrings(arr []string) {
+	for i := 0; i < len(arr); i++ {
+		for j := i + 1; j < len(arr); j++ {
+			if arr[i] > arr[j] {
+				arr[i], arr[j] = arr[j], arr[i]
+			}
 		}
 	}
-	fmt.Printf("============================================================\n\n")
+}
 
-	fmt.Printf("=== Input Environment Variables Debug ===\n")
-	fmt.Printf("INPUT_REPOSITORY env var: %q (default: \".\")\n", os.Getenv("INPUT_REPOSITORY"))
-	fmt.Printf("INPUT_BRANCH env var: %q (default: \"\")\n", os.Getenv("INPUT_BRANCH"))
-	fmt.Printf("INPUT_OUTPUT_FILE env var: %q (default: \"\")\n", os.Getenv("INPUT_OUTPUT_FILE"))
-	fmt.Printf("INPUT_VARIABLE_PREFIX env var: %q (default: \"GRYPE_\")\n", os.Getenv("INPUT_VARIABLE_PREFIX"))
-	fmt.Printf("=========================================\n\n")
+func run() error {
+	// Get inputs from environment variables
+	// GitHub Actions preserves hyphens in input names when setting environment variables
+	// e.g., 'output-file' becomes 'INPUT_OUTPUT-FILE' (not INPUT_OUTPUT_FILE)
+
+	// Sort and display INPUT_* and GITHUB_* environment variables
+	fmt.Printf("=== Environment Variables (sorted) ===\n")
+	var inputVars []string
+	var githubVars []string
+	for _, env := range os.Environ() {
+		if strings.HasPrefix(env, "INPUT_") {
+			inputVars = append(inputVars, env)
+		} else if strings.HasPrefix(env, "GITHUB_") {
+			githubVars = append(githubVars, env)
+		}
+	}
+	// Sort the slices
+	sortStrings(inputVars)
+	sortStrings(githubVars)
+	
+	// Print sorted INPUT_* variables
+	for _, v := range inputVars {
+		fmt.Println(v)
+	}
+	// Print sorted GITHUB_* variables
+	for _, v := range githubVars {
+		fmt.Println(v)
+	}
+	fmt.Printf("======================================\n\n")
 
 	repository := getEnv("INPUT_REPOSITORY", ".")
 	branch := getEnv("INPUT_BRANCH", "")
-	outputFile := getEnv("INPUT_OUTPUT_FILE", "")
-	variablePrefix := getEnv("INPUT_VARIABLE_PREFIX", "GRYPE_")
+	outputFile := getEnv("INPUT_OUTPUT-FILE", "")
+	variablePrefix := getEnv("INPUT_VARIABLE-PREFIX", "GRYPE_")
 
 	fmt.Printf("Starting Grype scan...\n")
 	fmt.Printf("Repository: %s\n", repository)
