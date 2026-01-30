@@ -1,4 +1,7 @@
-FROM golang:1.25.6-alpine AS builder
+ARG GOLANG_ALPINE_TAG=alpine
+ARG ALPINE_VERSION=latest
+
+FROM golang:${GOLANG_ALPINE_TAG} AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates
@@ -17,7 +20,7 @@ COPY *.go ./
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o grype-action .
 
 # Final stage - use same Alpine version as builder for consistency
-FROM alpine:3.21
+FROM alpine:${ALPINE_VERSION}
 
 # Install grype and other dependencies
 RUN apk add --no-cache ca-certificates curl bash git
