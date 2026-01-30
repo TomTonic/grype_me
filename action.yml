@@ -25,7 +25,9 @@ inputs:
     required: false
     default: 'GRYPE_'
   debug:
-    description: 'Enable debug output (prints environment variables when true)'
+    description: >-
+      Enable debug output (prints environment variables when true).
+      Warning: may expose sensitive data in logs.
     required: false
     default: 'false'
 
