@@ -63,11 +63,25 @@ func TestGetEnv(t *testing.T) {
 }
 
 func TestIsDebugEnabled(t *testing.T) {
+	originalValue, originalSet := os.LookupEnv("INPUT_DEBUG")
+	defer func() {
+		if originalSet {
+			_ = os.Setenv("INPUT_DEBUG", originalValue)
+		} else {
+			_ = os.Unsetenv("INPUT_DEBUG")
+		}
+	}()
+
 	tests := []struct {
 		name     string
 		envValue string
 		want     bool
 	}{
+		{
+			name:     "debug true uppercase",
+			envValue: "TRUE",
+			want:     true,
+		},
 		{
 			name:     "debug true",
 			envValue: "true",
@@ -84,6 +98,21 @@ func TestIsDebugEnabled(t *testing.T) {
 			want:     false,
 		},
 		{
+			name:     "debug false uppercase",
+			envValue: "FALSE",
+			want:     false,
+		},
+		{
+			name:     "debug invalid value",
+			envValue: "yes",
+			want:     false,
+		},
+		{
+			name:     "debug whitespace",
+			envValue: " true ",
+			want:     true,
+		},
+		{
 			name:     "debug empty",
 			envValue: "",
 			want:     false,
@@ -93,10 +122,7 @@ func TestIsDebugEnabled(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.envValue != "" {
-				_ = os.Setenv("INPUT_DEBUG", tt.envValue)
-				defer func() {
-					_ = os.Unsetenv("INPUT_DEBUG")
-				}()
+				t.Setenv("INPUT_DEBUG", tt.envValue)
 			} else {
 				_ = os.Unsetenv("INPUT_DEBUG")
 			}

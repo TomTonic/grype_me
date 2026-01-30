@@ -169,7 +169,8 @@ func getEnv(key, defaultValue string) string {
 }
 
 func isDebugEnabled() bool {
-	return strings.EqualFold(getEnv("INPUT_DEBUG", "false"), "true")
+	value := strings.TrimSpace(getEnv("INPUT_DEBUG", "false"))
+	return strings.EqualFold(value, "true")
 }
 
 func checkoutBranch(branch string) error {
