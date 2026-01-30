@@ -202,17 +202,18 @@ func copyOutputFile(src, dst string) (string, error) {
 	if !filepath.IsAbs(dst) {
 		if workspace := os.Getenv("GITHUB_WORKSPACE"); workspace != "" {
 			dst = filepath.Join(workspace, dst)
+		} else {
+			// Make destination path absolute if not in GitHub Actions
+			var err error
+			dst, err = filepath.Abs(dst)
+			if err != nil {
+				return "", err
+			}
 		}
-	}
-	
-	// Make destination path absolute
-	absPath, err := filepath.Abs(dst)
-	if err != nil {
-		return "", err
 	}
 
 	// Ensure directory exists
-	dir := filepath.Dir(absPath)
+	dir := filepath.Dir(dst)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", err
 	}
@@ -224,11 +225,11 @@ func copyOutputFile(src, dst string) (string, error) {
 	}
 
 	// Write to destination
-	if err := os.WriteFile(absPath, data, 0644); err != nil {
+	if err := os.WriteFile(dst, data, 0644); err != nil {
 		return "", err
 	}
 
-	return absPath, nil
+	return dst, nil
 }
 
 func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath string) error {
