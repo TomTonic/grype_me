@@ -197,6 +197,14 @@ func calculateStats(output *GrypeOutput) Stats {
 }
 
 func copyOutputFile(src, dst string) (string, error) {
+	// If dst is relative and we're in a GitHub Actions environment,
+	// make it relative to GITHUB_WORKSPACE
+	if !filepath.IsAbs(dst) {
+		if workspace := os.Getenv("GITHUB_WORKSPACE"); workspace != "" {
+			dst = filepath.Join(workspace, dst)
+		}
+	}
+	
 	// Make destination path absolute
 	absPath, err := filepath.Abs(dst)
 	if err != nil {
