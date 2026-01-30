@@ -1,3 +1,5 @@
+// Package main implements a GitHub Action for scanning container images and directories
+// with Anchore Grype vulnerability scanner.
 package main
 
 import (
@@ -62,8 +64,12 @@ func run() error {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpFilePath := tmpFile.Name()
-	tmpFile.Close()
-	defer os.Remove(tmpFilePath)
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+	defer func() {
+		_ = os.Remove(tmpFilePath)
+	}()
 
 	// Run grype scan
 	if err := runGrypeScan(repository, tmpFilePath); err != nil {
@@ -243,7 +249,9 @@ func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath string
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	// Write standard outputs
 	outputs := map[string]string{
@@ -273,7 +281,9 @@ func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath string
 		if err != nil {
 			return err
 		}
-		defer envFile.Close()
+		defer func() {
+			_ = envFile.Close()
+		}()
 
 		envVars := map[string]string{
 			"VERSION":    output.Descriptor.Version,

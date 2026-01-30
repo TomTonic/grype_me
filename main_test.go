@@ -47,8 +47,10 @@ func TestGetEnv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.setEnv {
-				os.Setenv(tt.key, tt.envValue)
-				defer os.Unsetenv(tt.key)
+				_ = os.Setenv(tt.key, tt.envValue)
+				defer func() {
+					_ = os.Unsetenv(tt.key)
+				}()
 			}
 
 			got := getEnv(tt.key, tt.defaultValue)
@@ -299,12 +301,16 @@ func TestParseGrypeOutput(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to create temp file: %v", err)
 			}
-			defer os.Remove(tmpFile.Name())
+			defer func() {
+				_ = os.Remove(tmpFile.Name())
+			}()
 
 			if _, err := tmpFile.WriteString(tt.jsonData); err != nil {
 				t.Fatalf("Failed to write to temp file: %v", err)
 			}
-			tmpFile.Close()
+			if err := tmpFile.Close(); err != nil {
+				t.Fatalf("Failed to close temp file: %v", err)
+			}
 
 			got, err := parseGrypeOutput(tmpFile.Name())
 			if (err != nil) != tt.wantErr {
@@ -602,8 +608,10 @@ func setupGrype(t *testing.T) bool {
 	// If using /tmp/bin/grype, add to PATH
 	if grypeCmd == "/tmp/bin/grype" {
 		oldPath := os.Getenv("PATH")
-		os.Setenv("PATH", "/tmp/bin:"+oldPath)
-		t.Cleanup(func() { os.Setenv("PATH", oldPath) })
+		_ = os.Setenv("PATH", "/tmp/bin:"+oldPath)
+		t.Cleanup(func() {
+			_ = os.Setenv("PATH", oldPath)
+		})
 	}
 
 	return true
