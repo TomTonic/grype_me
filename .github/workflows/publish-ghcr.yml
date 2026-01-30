@@ -14,7 +14,7 @@ permissions:
 jobs:
   ci:
     name: Run CI
-    uses: ./.github/workflows/ci.yml
+    uses: TomTonic/grype_me/.github/workflows/ci.yml@main
     permissions:
       contents: read
 
