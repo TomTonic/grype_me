@@ -47,6 +47,15 @@ func run() error {
 
 	fmt.Printf("Starting Grype scan...\n")
 	fmt.Printf("Repository: %s\n", repository)
+	fmt.Printf("Output file: %s\n", outputFile)
+	fmt.Printf("GITHUB_WORKSPACE: %s\n", os.Getenv("GITHUB_WORKSPACE"))
+
+	// Debug: Check if we're in a Docker container
+	if _, err := os.Stat("/github/workspace"); err == nil {
+		fmt.Printf("Detected Docker container environment (/github/workspace exists)\n")
+	} else {
+		fmt.Printf("Not in Docker container environment (/github/workspace does not exist)\n")
+	}
 	if branch != "" {
 		fmt.Printf("Branch: %s\n", branch)
 	}
@@ -88,11 +97,27 @@ func run() error {
 	// Copy output file to desired location if specified
 	jsonOutputPath := ""
 	if outputFile != "" {
+		fmt.Printf("Copying output file from %s to %s\n", tmpFilePath, outputFile)
+
+		// Verify source file exists and get its size
+		if info, err := os.Stat(tmpFilePath); err != nil {
+			return fmt.Errorf("source file %s does not exist: %w", tmpFilePath, err)
+		} else {
+			fmt.Printf("Source file size: %d bytes\n", info.Size())
+		}
+
 		jsonOutputPath, err = copyOutputFile(tmpFilePath, outputFile)
 		if err != nil {
 			return fmt.Errorf("failed to copy output file: %w", err)
 		}
 		fmt.Printf("Scan results saved to: %s\n", jsonOutputPath)
+
+		// Verify destination file was created
+		if info, err := os.Stat(jsonOutputPath); err != nil {
+			fmt.Printf("WARNING: Destination file %s was not created or is not accessible: %v\n", jsonOutputPath, err)
+		} else {
+			fmt.Printf("Destination file size: %d bytes\n", info.Size())
+		}
 	}
 
 	// Set GitHub Actions outputs
@@ -203,6 +228,8 @@ func calculateStats(output *GrypeOutput) Stats {
 }
 
 func copyOutputFile(src, dst string) (string, error) {
+	fmt.Printf("[copyOutputFile] src=%s, dst=%s\n", src, dst)
+
 	// If dst is relative and we're in a GitHub Actions environment,
 	// make it relative to the workspace
 	if !filepath.IsAbs(dst) {
@@ -210,35 +237,43 @@ func copyOutputFile(src, dst string) (string, error) {
 		// Check if we're running in a Docker container action
 		if _, err := os.Stat("/github/workspace"); err == nil {
 			dst = filepath.Join("/github/workspace", dst)
+			fmt.Printf("[copyOutputFile] Using Docker workspace path: %s\n", dst)
 		} else if workspace := os.Getenv("GITHUB_WORKSPACE"); workspace != "" {
 			// Fallback to GITHUB_WORKSPACE for non-Docker actions
 			dst = filepath.Join(workspace, dst)
+			fmt.Printf("[copyOutputFile] Using GITHUB_WORKSPACE: %s\n", dst)
 		} else {
 			// Make destination path absolute if not in GitHub Actions
 			var err error
 			dst, err = filepath.Abs(dst)
 			if err != nil {
-				return "", err
+				return "", fmt.Errorf("failed to make path absolute: %w", err)
 			}
+			fmt.Printf("[copyOutputFile] Using absolute path: %s\n", dst)
 		}
 	}
 
 	// Ensure directory exists
 	dir := filepath.Dir(dst)
+	fmt.Printf("[copyOutputFile] Creating directory: %s\n", dir)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
 	// Read source file
+	fmt.Printf("[copyOutputFile] Reading source file: %s\n", src)
 	data, err := os.ReadFile(src)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to read source file %s: %w", src, err)
 	}
+	fmt.Printf("[copyOutputFile] Read %d bytes from source\n", len(data))
 
 	// Write to destination
+	fmt.Printf("[copyOutputFile] Writing to destination: %s\n", dst)
 	if err := os.WriteFile(dst, data, 0644); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to write to destination %s: %w", dst, err)
 	}
+	fmt.Printf("[copyOutputFile] Successfully wrote %d bytes to %s\n", len(data), dst)
 
 	return dst, nil
 }
