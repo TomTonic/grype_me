@@ -55,30 +55,24 @@ func main() {
 
 func run() error {
 	// Get inputs from environment variables
-	// GitHub Actions preserves hyphens in input names when setting environment variables
-	// e.g., 'output-file' becomes 'INPUT_OUTPUT-FILE' (not INPUT_OUTPUT_FILE)
+	// GitHub Actions prepends "INPUT_" to input names when setting environment variables and uses uppercase
+	// e.g., 'output-file' becomes 'INPUT_OUTPUT-FILE'
 
 	// Collect and display INPUT_* and GITHUB_* environment variables
 	if isDebugEnabled() {
 		fmt.Println("=== Environment Variables (sorted) ===")
-		var inputVars, githubVars []string
+		var envVars []string
 		for _, env := range os.Environ() {
 			if strings.HasPrefix(env, "INPUT_") {
-				inputVars = append(inputVars, env)
+				envVars = append(envVars, env)
 			} else if strings.HasPrefix(env, "GITHUB_") {
-				githubVars = append(githubVars, env)
+				envVars = append(envVars, env)
 			}
 		}
 
-		// Sort using standard library
-		sort.Strings(inputVars)
-		sort.Strings(githubVars)
+		sort.Strings(envVars)
 
-		// Print sorted variables
-		for _, v := range inputVars {
-			fmt.Println(v)
-		}
-		for _, v := range githubVars {
+		for _, v := range envVars {
 			fmt.Println(v)
 		}
 		fmt.Println("======================================")
