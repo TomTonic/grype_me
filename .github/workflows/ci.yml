@@ -111,18 +111,22 @@ jobs:
         run: |
           set -euo pipefail
           api_url="https://registry.hub.docker.com/v2/repositories/library/golang/tags"
-          latest_tag="$(curl -sSfL --get "$api_url" \
+          latest_tag="$(curl -sSfL --retry 3 --retry-delay 5 --max-time 30 \
+            --get "$api_url" \
             --data-urlencode "name=alpine" \
             --data-urlencode "ordering=last_updated" \
-            --data-urlencode "page_size=100" \
+            --data-urlencode "page_size=200" \
             | jq -r \
               --arg regex '^[0-9]+\\.[0-9]+\\.[0-9]+-alpine[0-9]+\\.[0-9]+(\\.[0-9]+)?$' \
-              '.results | map(select(.name | test($regex))) | sort_by(.last_updated) | last | .name')"
+              '.results | map(select(.name | test($regex))) | first | .name')"
           if [ -z "$latest_tag" ] || [ "$latest_tag" = "null" ]; then
             echo "Failed to resolve latest golang-alpine tag" >&2
             exit 1
           fi
           alpine_version="${latest_tag##*-alpine}"
+          if [ "${alpine_version#*.*.*}" != "$alpine_version" ]; then
+            alpine_version="${alpine_version%.*}"
+          fi
           if [ -z "$alpine_version" ]; then
             echo "Failed to derive alpine version from tag: $latest_tag" >&2
             exit 1
