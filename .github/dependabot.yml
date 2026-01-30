@@ -26,3 +26,8 @@ updates:
       - ci
     commit-message:
       prefix: "ci-upd"
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: daily
