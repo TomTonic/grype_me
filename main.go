@@ -26,9 +26,24 @@ type GrypeOutput struct {
 	Descriptor struct {
 		Version string `json:"version"`
 		DB      struct {
-			Built string `json:"built"`
+			// Older grype outputs exposed the built timestamp at descriptor.db.built.
+			Built string `json:"built,omitempty"`
+			// Newer grype outputs (e.g. 0.106+) expose it at descriptor.db.status.built.
+			Status struct {
+				Built string `json:"built,omitempty"`
+			} `json:"status,omitempty"`
 		} `json:"db"`
 	} `json:"descriptor"`
+}
+
+func (o *GrypeOutput) DBBuilt() string {
+	if o == nil {
+		return ""
+	}
+	if built := o.Descriptor.DB.Status.Built; built != "" {
+		return built
+	}
+	return o.Descriptor.DB.Built
 }
 
 func main() {
@@ -40,32 +55,28 @@ func main() {
 
 func run() error {
 	// Get inputs from environment variables
-	// GitHub Actions preserves hyphens in input names when setting environment variables
-	// e.g., 'output-file' becomes 'INPUT_OUTPUT-FILE' (not INPUT_OUTPUT_FILE)
+	// GitHub Actions prepends "INPUT_" to input names when setting environment variables and uses uppercase
+	// e.g., 'output-file' becomes 'INPUT_OUTPUT-FILE'
 
 	// Collect and display INPUT_* and GITHUB_* environment variables
-	fmt.Println("=== Environment Variables (sorted) ===")
-	var inputVars, githubVars []string
-	for _, env := range os.Environ() {
-		if strings.HasPrefix(env, "INPUT_") {
-			inputVars = append(inputVars, env)
-		} else if strings.HasPrefix(env, "GITHUB_") {
-			githubVars = append(githubVars, env)
+	if isDebugEnabled() {
+		fmt.Println("=== Environment Variables (sorted) ===")
+		var envVars []string
+		for _, env := range os.Environ() {
+			if strings.HasPrefix(env, "INPUT_") {
+				envVars = append(envVars, env)
+			} else if strings.HasPrefix(env, "GITHUB_") {
+				envVars = append(envVars, env)
+			}
 		}
-	}
 
-	// Sort using standard library
-	sort.Strings(inputVars)
-	sort.Strings(githubVars)
+		sort.Strings(envVars)
 
-	// Print sorted variables
-	for _, v := range inputVars {
-		fmt.Println(v)
+		for _, v := range envVars {
+			fmt.Println(v)
+		}
+		fmt.Println("======================================")
 	}
-	for _, v := range githubVars {
-		fmt.Println(v)
-	}
-	fmt.Println("======================================")
 
 	repository := getEnv("INPUT_REPOSITORY", ".")
 	branch := getEnv("INPUT_BRANCH", "")
@@ -164,6 +175,11 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func isDebugEnabled() bool {
+	value := strings.TrimSpace(getEnv("INPUT_DEBUG", "false"))
+	return strings.EqualFold(value, "true")
 }
 
 func checkoutBranch(branch string) error {
@@ -373,9 +389,10 @@ func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath string
 	}()
 
 	// Write standard outputs
+	dbBuilt := output.DBBuilt()
 	outputs := map[string]string{
 		"grype-version": output.Descriptor.Version,
-		"db-version":    output.Descriptor.DB.Built,
+		"db-version":    dbBuilt,
 		"cve-count":     fmt.Sprintf("%d", stats.Total),
 		"critical":      fmt.Sprintf("%d", stats.Critical),
 		"high":          fmt.Sprintf("%d", stats.High),
@@ -406,7 +423,7 @@ func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath string
 
 		envVars := map[string]string{
 			"VERSION":    output.Descriptor.Version,
-			"DB_VERSION": output.Descriptor.DB.Built,
+			"DB_VERSION": dbBuilt,
 			"CVE_COUNT":  fmt.Sprintf("%d", stats.Total),
 			"CRITICAL":   fmt.Sprintf("%d", stats.Critical),
 			"HIGH":       fmt.Sprintf("%d", stats.High),
@@ -428,7 +445,7 @@ func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath string
 func printSummary(stats Stats, output *GrypeOutput) {
 	fmt.Println("\n=== Grype Scan Summary ===")
 	fmt.Printf("Grype Version: %s\n", output.Descriptor.Version)
-	fmt.Printf("Database Version: %s\n", output.Descriptor.DB.Built)
+	fmt.Printf("Database Version: %s\n", output.DBBuilt())
 	fmt.Printf("\nVulnerabilities Found:\n")
 	fmt.Printf("  Total:    %d\n", stats.Total)
 	fmt.Printf("  Critical: %d\n", stats.Critical)

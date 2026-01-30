@@ -62,6 +62,79 @@ func TestGetEnv(t *testing.T) {
 	}
 }
 
+func TestIsDebugEnabled(t *testing.T) {
+	originalValue, originalSet := os.LookupEnv("INPUT_DEBUG")
+	defer func() {
+		if originalSet {
+			_ = os.Setenv("INPUT_DEBUG", originalValue)
+		} else {
+			_ = os.Unsetenv("INPUT_DEBUG")
+		}
+	}()
+
+	tests := []struct {
+		name     string
+		envValue string
+		want     bool
+	}{
+		{
+			name:     "debug true uppercase",
+			envValue: "TRUE",
+			want:     true,
+		},
+		{
+			name:     "debug true",
+			envValue: "true",
+			want:     true,
+		},
+		{
+			name:     "debug true mixed case",
+			envValue: "TrUe",
+			want:     true,
+		},
+		{
+			name:     "debug false",
+			envValue: "false",
+			want:     false,
+		},
+		{
+			name:     "debug false uppercase",
+			envValue: "FALSE",
+			want:     false,
+		},
+		{
+			name:     "debug invalid value",
+			envValue: "yes",
+			want:     false,
+		},
+		{
+			name:     "debug whitespace",
+			envValue: " true ",
+			want:     true,
+		},
+		{
+			name:     "debug empty",
+			envValue: "",
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				t.Setenv("INPUT_DEBUG", tt.envValue)
+			} else {
+				_ = os.Unsetenv("INPUT_DEBUG")
+			}
+
+			got := isDebugEnabled()
+			if got != tt.want {
+				t.Errorf("isDebugEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestCalculateStats tests the calculateStats function
 func TestCalculateStats(t *testing.T) {
 	tests := []struct {
@@ -249,7 +322,9 @@ func TestParseGrypeOutput(t *testing.T) {
 				"descriptor": {
 					"version": "0.65.0",
 					"db": {
-						"built": "2024-01-30T10:00:00Z"
+						"status": {
+							"built": "2024-01-30T10:00:00Z"
+						}
 					}
 				}
 			}`,
@@ -269,14 +344,24 @@ func TestParseGrypeOutput(t *testing.T) {
 				Descriptor: struct {
 					Version string `json:"version"`
 					DB      struct {
-						Built string `json:"built"`
+						Built  string `json:"built,omitempty"`
+						Status struct {
+							Built string `json:"built,omitempty"`
+						} `json:"status,omitempty"`
 					} `json:"db"`
 				}{
 					Version: "0.65.0",
 					DB: struct {
-						Built string `json:"built"`
+						Built  string `json:"built,omitempty"`
+						Status struct {
+							Built string `json:"built,omitempty"`
+						} `json:"status,omitempty"`
 					}{
-						Built: "2024-01-30T10:00:00Z",
+						Status: struct {
+							Built string `json:"built,omitempty"`
+						}{
+							Built: "2024-01-30T10:00:00Z",
+						},
 					},
 				},
 			},
@@ -605,7 +690,10 @@ func TestGrypeOutputJSONMarshaling(t *testing.T) {
 		Descriptor: struct {
 			Version string `json:"version"`
 			DB      struct {
-				Built string `json:"built"`
+				Built  string `json:"built,omitempty"`
+				Status struct {
+					Built string `json:"built,omitempty"`
+				} `json:"status,omitempty"`
 			} `json:"db"`
 		}{
 			Version: "0.65.0",
@@ -694,10 +782,10 @@ func TestEndToEndGrypeScan(t *testing.T) {
 		t.Logf("Grype version: %s", output.Descriptor.Version)
 	}
 
-	if output.Descriptor.DB.Built == "" {
+	if output.DBBuilt() == "" {
 		t.Logf("Database built info not available (this is expected in some environments)")
 	} else {
-		t.Logf("Database built: %s", output.Descriptor.DB.Built)
+		t.Logf("Database built: %s", output.DBBuilt())
 	}
 
 	// Calculate statistics
@@ -842,8 +930,10 @@ func TestIntegrationWithMockGrypeOutput(t *testing.T) {
 		"descriptor": {
 			"version": "0.107.0",
 			"db": {
-				"built": "2024-01-30T10:00:00Z",
-				"schemaVersion": 6
+				"status": {
+					"built": "2024-01-30T10:00:00Z",
+					"schemaVersion": 6
+				}
 			}
 		}
 	}`
@@ -865,8 +955,8 @@ func TestIntegrationWithMockGrypeOutput(t *testing.T) {
 			t.Errorf("Expected version 0.107.0, got %s", output.Descriptor.Version)
 		}
 
-		if output.Descriptor.DB.Built != "2024-01-30T10:00:00Z" {
-			t.Errorf("Expected DB built time 2024-01-30T10:00:00Z, got %s", output.Descriptor.DB.Built)
+		if output.DBBuilt() != "2024-01-30T10:00:00Z" {
+			t.Errorf("Expected DB built time 2024-01-30T10:00:00Z, got %s", output.DBBuilt())
 		}
 
 		// Verify matches
