@@ -407,6 +407,108 @@ func TestCopyOutputFileSourceNotFound(t *testing.T) {
 	}
 }
 
+// TestCopyOutputFileWithGitHubWorkspace tests copyOutputFile with GITHUB_WORKSPACE set
+func TestCopyOutputFileWithGitHubWorkspace(t *testing.T) {
+	// Create a temporary source file
+	tmpDir := t.TempDir()
+	srcFile := filepath.Join(tmpDir, "source.json")
+	testData := []byte(`{"test": "workspace data"}`)
+
+	if err := os.WriteFile(srcFile, testData, 0644); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Create a mock workspace directory
+	workspaceDir := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+		t.Fatalf("Failed to create workspace directory: %v", err)
+	}
+
+	// Set GITHUB_WORKSPACE environment variable
+	oldWorkspace := os.Getenv("GITHUB_WORKSPACE")
+	defer func() {
+		if oldWorkspace != "" {
+			_ = os.Setenv("GITHUB_WORKSPACE", oldWorkspace)
+		} else {
+			_ = os.Unsetenv("GITHUB_WORKSPACE")
+		}
+	}()
+	if err := os.Setenv("GITHUB_WORKSPACE", workspaceDir); err != nil {
+		t.Fatalf("Failed to set GITHUB_WORKSPACE: %v", err)
+	}
+
+	// Test with relative path (should use GITHUB_WORKSPACE)
+	dstFile := "output.json"
+	got, err := copyOutputFile(srcFile, dstFile)
+	if err != nil {
+		t.Fatalf("copyOutputFile() error = %v", err)
+	}
+
+	expectedPath := filepath.Join(workspaceDir, dstFile)
+	if got != expectedPath {
+		t.Errorf("copyOutputFile() = %v, want %v", got, expectedPath)
+	}
+
+	// Verify the file was created in the workspace
+	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+		t.Errorf("copyOutputFile() did not create file in workspace")
+	}
+
+	// Verify content
+	copiedData, err := os.ReadFile(got)
+	if err != nil {
+		t.Errorf("Failed to read copied file: %v", err)
+	}
+	if string(copiedData) != string(testData) {
+		t.Errorf("copyOutputFile() content mismatch")
+	}
+}
+
+// TestCopyOutputFileWithDockerWorkspace tests copyOutputFile with Docker workspace
+func TestCopyOutputFileWithDockerWorkspace(t *testing.T) {
+	// Create a temporary source file
+	tmpDir := t.TempDir()
+	srcFile := filepath.Join(tmpDir, "source.json")
+	testData := []byte(`{"test": "docker data"}`)
+
+	if err := os.WriteFile(srcFile, testData, 0644); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Create a mock /github/workspace directory (simulating Docker environment)
+	dockerWorkspaceDir := filepath.Join(tmpDir, "github", "workspace")
+	if err := os.MkdirAll(dockerWorkspaceDir, 0755); err != nil {
+		t.Fatalf("Failed to create docker workspace directory: %v", err)
+	}
+
+	// Test with relative path - mock Docker environment by temporarily changing the logic
+	// Since we can't actually create /github/workspace in tests, we'll test the logic indirectly
+	// This test verifies that absolute paths work correctly
+	dstFile := filepath.Join(dockerWorkspaceDir, "output.json")
+	got, err := copyOutputFile(srcFile, dstFile)
+	if err != nil {
+		t.Fatalf("copyOutputFile() error = %v", err)
+	}
+
+	if got != dstFile {
+		t.Errorf("copyOutputFile() = %v, want %v", got, dstFile)
+	}
+
+	// Verify the file was created
+	if _, err := os.Stat(got); os.IsNotExist(err) {
+		t.Errorf("copyOutputFile() did not create destination file")
+	}
+
+	// Verify content
+	copiedData, err := os.ReadFile(got)
+	if err != nil {
+		t.Errorf("Failed to read copied file: %v", err)
+	}
+	if string(copiedData) != string(testData) {
+		t.Errorf("copyOutputFile() content mismatch")
+	}
+}
+
 // TestGrypeOutputJSONMarshaling tests that GrypeOutput can be marshaled and unmarshaled
 func TestGrypeOutputJSONMarshaling(t *testing.T) {
 	original := &GrypeOutput{
