@@ -78,6 +78,7 @@ jobs:
 | `branch` | Branch to checkout before scanning (only works when repository is ".") | No | Current branch |
 | `output-file` | Path to save JSON scan results | No | `` (no file saved) |
 | `variable-prefix` | Prefix for environment variable names | No | `GRYPE_` |
+| `debug` | Print INPUT_/GITHUB_ environment variables when `true` (warning: may expose sensitive data in logs) | No | `false` |
 
 ## Outputs
 
