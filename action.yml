@@ -24,6 +24,10 @@ inputs:
       (optional, defaults to "GRYPE_")
     required: false
     default: 'GRYPE_'
+  debug:
+    description: 'Enable debug output (prints environment variables when true)'
+    required: false
+    default: 'false'
 
 outputs:
   grype-version:
