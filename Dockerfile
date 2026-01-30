@@ -31,5 +31,9 @@ RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh -
 # Copy the built application
 COPY --from=builder /app/grype-action /usr/local/bin/grype-action
 
+# Set working directory to GitHub Actions workspace mount point
+# This ensures the action runs in the workspace directory where files are accessible
+WORKDIR /github/workspace
+
 # Set the entrypoint
 ENTRYPOINT ["/usr/local/bin/grype-action"]
