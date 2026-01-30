@@ -39,7 +39,6 @@ jobs:
 
       - name: Run staticcheck
         run: staticcheck ./...
-        continue-on-error: true
 
       - name: Set up Python for YAML linting
         uses: actions/setup-python@v5
@@ -51,7 +50,6 @@ jobs:
 
       - name: Run yamllint
         run: yamllint -c .yamllint .github/workflows/ action.yml example-workflow.yml
-        continue-on-error: true
 
   test:
     name: Test
@@ -74,7 +72,7 @@ jobs:
       - name: Update Grype database
         run: grype db update
 
-      - name: Run unit tests
+      - name: Run tests
         run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
       - name: Display test coverage
