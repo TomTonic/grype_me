@@ -8,6 +8,9 @@ name: End-to-End Test
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   e2e-test-action:
     name: E2E Test - Action
@@ -15,8 +18,13 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Run Grype vulnerability scanner
         id: grype-scan
@@ -42,7 +50,7 @@ jobs:
 
       - name: Upload scan results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: grype-scan-results
           path: grype-results.json
