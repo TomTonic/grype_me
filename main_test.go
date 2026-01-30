@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -450,28 +451,9 @@ func TestGrypeOutputJSONMarshaling(t *testing.T) {
 // TestEndToEndGrypeScan is an end-to-end integration test that runs an actual grype scan
 // This test requires grype to be installed and available in PATH
 func TestEndToEndGrypeScan(t *testing.T) {
-	// Check if grype is available
-	grypeCmd := os.Getenv("GRYPE_PATH")
-	if grypeCmd == "" {
-		grypeCmd = "grype"
-	}
-	
-	// Try to find grype
-	if _, err := os.Stat("/tmp/bin/grype"); err == nil {
-		grypeCmd = "/tmp/bin/grype"
-	}
-	
-	// Check if grype exists
-	_, err := os.Stat(grypeCmd)
-	if err != nil {
-		t.Skip("Grype not available, skipping end-to-end test. Set GRYPE_PATH or install grype to /tmp/bin/grype")
-	}
-
-	// Set PATH to include grype location
-	if grypeCmd == "/tmp/bin/grype" {
-		oldPath := os.Getenv("PATH")
-		os.Setenv("PATH", "/tmp/bin:"+oldPath)
-		defer os.Setenv("PATH", oldPath)
+	// Find and setup grype
+	if !setupGrype(t) {
+		return // Test was skipped
 	}
 
 	// Create a temporary directory for test output
@@ -480,7 +462,7 @@ func TestEndToEndGrypeScan(t *testing.T) {
 
 	// Test scanning the current directory (our Go project)
 	// This is a real end-to-end test scanning actual code
-	err = runGrypeScan(".", outputFile)
+	err := runGrypeScan(".", outputFile)
 	
 	// Check if the scan failed due to missing database
 	if err != nil {
@@ -556,37 +538,18 @@ func TestEndToEndGrypeScan(t *testing.T) {
 
 // TestEndToEndGrypeScanWithDockerImage tests scanning a Docker image
 func TestEndToEndGrypeScanWithDockerImage(t *testing.T) {
-	// Check if grype is available
-	grypeCmd := os.Getenv("GRYPE_PATH")
-	if grypeCmd == "" {
-		grypeCmd = "grype"
-	}
-	
-	// Try to find grype
-	if _, err := os.Stat("/tmp/bin/grype"); err == nil {
-		grypeCmd = "/tmp/bin/grype"
-	}
-	
-	// Check if grype exists
-	_, err := os.Stat(grypeCmd)
-	if err != nil {
-		t.Skip("Grype not available, skipping Docker image test. Set GRYPE_PATH or install grype to /tmp/bin/grype")
-	}
-
-	// Set PATH to include grype location
-	if grypeCmd == "/tmp/bin/grype" {
-		oldPath := os.Getenv("PATH")
-		os.Setenv("PATH", "/tmp/bin:"+oldPath)
-		defer os.Setenv("PATH", oldPath)
+	// Find and setup grype
+	if !setupGrype(t) {
+		return // Test was skipped
 	}
 
 	// Create a temporary directory for test files
 	tmpDir := t.TempDir()
 	outputFile := filepath.Join(tmpDir, "docker-scan-results.json")
 
-	// Test scanning a small public Docker image (alpine:latest is commonly available)
+	// Test scanning alpine:3.7 Docker image (known to have vulnerabilities)
 	// Note: This test may be skipped in CI environments without Docker daemon
-	err = runGrypeScan("alpine:3.7", outputFile)
+	err := runGrypeScan("alpine:3.7", outputFile)
 	
 	// If the scan fails (e.g., no Docker daemon or database), skip the test
 	if err != nil {
@@ -614,6 +577,36 @@ func TestEndToEndGrypeScanWithDockerImage(t *testing.T) {
 
 	stats := calculateStats(output)
 	t.Logf("Docker image scan completed: found %d vulnerabilities", stats.Total)
+}
+
+// setupGrype finds grype and sets up the PATH for testing
+// Returns false if grype is not available (and skips the test)
+func setupGrype(t *testing.T) bool {
+	t.Helper()
+	
+	// Check if grype is available in standard locations
+	grypeCmd := os.Getenv("GRYPE_PATH")
+	if grypeCmd == "" {
+		// Try to find grype in PATH first
+		if path, err := exec.LookPath("grype"); err == nil {
+			grypeCmd = path
+		} else if _, err := os.Stat("/tmp/bin/grype"); err == nil {
+			// Fall back to /tmp/bin/grype
+			grypeCmd = "/tmp/bin/grype"
+		} else {
+			t.Skip("Grype not available. Set GRYPE_PATH or install grype to /tmp/bin/grype or PATH")
+			return false
+		}
+	}
+
+	// If using /tmp/bin/grype, add to PATH
+	if grypeCmd == "/tmp/bin/grype" {
+		oldPath := os.Getenv("PATH")
+		os.Setenv("PATH", "/tmp/bin:"+oldPath)
+		t.Cleanup(func() { os.Setenv("PATH", oldPath) })
+	}
+
+	return true
 }
 
 // TestIntegrationWithMockGrypeOutput tests the integration flow with pre-generated grype output
