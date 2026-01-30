@@ -42,6 +42,14 @@ func run() error {
 	// GitHub Actions converts hyphens in input names to underscores
 	// e.g., 'output-file' becomes 'INPUT_OUTPUT_FILE'
 
+	fmt.Printf("=== Full Environment Variable Dump (INPUT_* and GITHUB_*) ===\n")
+	for _, env := range os.Environ() {
+		if strings.HasPrefix(env, "INPUT_") || strings.HasPrefix(env, "GITHUB_") {
+			fmt.Println(env)
+		}
+	}
+	fmt.Printf("============================================================\n\n")
+
 	fmt.Printf("=== Input Environment Variables Debug ===\n")
 	fmt.Printf("INPUT_REPOSITORY env var: %q (default: \".\")\n", os.Getenv("INPUT_REPOSITORY"))
 	fmt.Printf("INPUT_BRANCH env var: %q (default: \"\")\n", os.Getenv("INPUT_BRANCH"))
