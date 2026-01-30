@@ -85,8 +85,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    env:
-      IMAGE_NAME: ghcr.io/${{ github.repository }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -108,6 +106,8 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           GRYPE_VERSION: ${{ needs.grype-release.outputs.grype_version }}
         run: |
+          IMAGE_NAME="ghcr.io/${{ github.repository }}"
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           if [ "$EVENT_NAME" = "release" ]; then
             TAGS="${IMAGE_NAME}:${RELEASE_TAG},${IMAGE_NAME}:latest"
           else
