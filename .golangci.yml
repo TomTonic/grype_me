@@ -7,7 +7,7 @@ version: 2
 run:
   timeout: 5m
   tests: true
-  go: '1.25'  # Use Go 1.25 to match project version
+  # Note: go version removed - golangci-lint auto-detects from go.mod
 
 linters:
   enable:

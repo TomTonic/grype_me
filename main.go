@@ -41,14 +41,14 @@ func run() error {
 	// Get inputs from environment variables
 	// GitHub Actions converts hyphens in input names to underscores
 	// e.g., 'output-file' becomes 'INPUT_OUTPUT_FILE'
-	
+
 	fmt.Printf("=== Input Environment Variables Debug ===\n")
 	fmt.Printf("INPUT_REPOSITORY env var: %q (default: \".\")\n", os.Getenv("INPUT_REPOSITORY"))
 	fmt.Printf("INPUT_BRANCH env var: %q (default: \"\")\n", os.Getenv("INPUT_BRANCH"))
 	fmt.Printf("INPUT_OUTPUT_FILE env var: %q (default: \"\")\n", os.Getenv("INPUT_OUTPUT_FILE"))
 	fmt.Printf("INPUT_VARIABLE_PREFIX env var: %q (default: \"GRYPE_\")\n", os.Getenv("INPUT_VARIABLE_PREFIX"))
 	fmt.Printf("=========================================\n\n")
-	
+
 	repository := getEnv("INPUT_REPOSITORY", ".")
 	branch := getEnv("INPUT_BRANCH", "")
 	outputFile := getEnv("INPUT_OUTPUT_FILE", "")
