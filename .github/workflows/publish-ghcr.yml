@@ -30,7 +30,10 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const ownerType = context.payload.repository.owner.type || 'User';
+            const ownerInfo = await github.rest.users.getByUsername({
+              username: context.repo.owner
+            });
+            const ownerType = ownerInfo.data.type || 'User';
             const release = await github.rest.repos.getLatestRelease({
               owner: 'anchore',
               repo: 'grype'
@@ -42,24 +45,23 @@ jobs:
             const packageName = context.repo.repo;
             let versions = [];
             try {
+              const listParams = {
+                package_type: 'container',
+                package_name: packageName,
+                per_page: 100
+              };
               if (ownerType === 'Organization') {
-                const response =
-                  await github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg({
-                    package_type: 'container',
-                    package_name: packageName,
-                    org: context.repo.owner,
-                    per_page: 100
-                  });
-                versions = response.data;
+                listParams.org = context.repo.owner;
+                versions = await github.paginate(
+                  github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
+                  listParams
+                );
               } else {
-                const response =
-                  await github.rest.packages.getAllPackageVersionsForPackageOwnedByUser({
-                    package_type: 'container',
-                    package_name: packageName,
-                    username: context.repo.owner,
-                    per_page: 100
-                  });
-                versions = response.data;
+                listParams.username = context.repo.owner;
+                versions = await github.paginate(
+                  github.rest.packages.getAllPackageVersionsForPackageOwnedByUser,
+                  listParams
+                );
               }
             } catch (error) {
               if (error.status !== 404) {
@@ -84,7 +86,7 @@ jobs:
       contents: read
       packages: write
     env:
-      IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/grype_me
+      IMAGE_NAME: ghcr.io/${{ github.repository }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -109,7 +111,7 @@ jobs:
           if [ "$EVENT_NAME" = "release" ]; then
             TAGS="${IMAGE_NAME}:${RELEASE_TAG},${IMAGE_NAME}:latest"
           else
-            TAGS="${IMAGE_NAME}:grype-${GRYPE_VERSION},${IMAGE_NAME}:latest"
+            TAGS="${IMAGE_NAME}:grype-${GRYPE_VERSION}"
           fi
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
 
