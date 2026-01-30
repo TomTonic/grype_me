@@ -16,8 +16,8 @@ COPY *.go ./
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o grype-action .
 
-# Final stage
-FROM alpine:latest
+# Final stage - use same Alpine version as builder for consistency
+FROM alpine:3.21
 
 # Install grype and other dependencies
 RUN apk add --no-cache ca-certificates curl bash git
