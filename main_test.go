@@ -530,12 +530,14 @@ func TestCopyOutputFilePathTraversal(t *testing.T) {
 	oldWorkspace := os.Getenv("GITHUB_WORKSPACE")
 	defer func() {
 		if oldWorkspace != "" {
-			os.Setenv("GITHUB_WORKSPACE", oldWorkspace)
+			_ = os.Setenv("GITHUB_WORKSPACE", oldWorkspace)
 		} else {
-			os.Unsetenv("GITHUB_WORKSPACE")
+			_ = os.Unsetenv("GITHUB_WORKSPACE")
 		}
 	}()
-	os.Setenv("GITHUB_WORKSPACE", workspace)
+	if err := os.Setenv("GITHUB_WORKSPACE", workspace); err != nil {
+		t.Fatalf("Failed to set GITHUB_WORKSPACE: %v", err)
+	}
 
 	// Test cases with path traversal attempts
 	tests := []struct {
