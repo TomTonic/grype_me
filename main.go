@@ -176,6 +176,42 @@ func isDebugEnabled() bool {
 	return strings.EqualFold(value, "true")
 }
 
+// configureGitSafeDirectory adds the current working directory to Git's safe.directory
+// configuration. This is necessary because Git (since v2.35.2) refuses to operate on
+// repositories owned by different users (CVE-2022-24765). In Docker containers,
+// the /github/workspace directory may be owned by a different user than the container runs as.
+func configureGitSafeDirectory() error {
+	// Get current working directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	// Add current directory to safe.directory
+	cmd := exec.Command("git", "config", "--global", "--add", "safe.directory", cwd)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to configure git safe.directory: %w", err)
+	}
+
+	// Also add /github/workspace if we're in a GitHub Actions environment
+	if workspace := os.Getenv("GITHUB_WORKSPACE"); workspace != "" && workspace != cwd {
+		cmd = exec.Command("git", "config", "--global", "--add", "safe.directory", workspace)
+		if err := cmd.Run(); err != nil {
+			// Non-fatal: we already added cwd
+			fmt.Printf("Warning: failed to add GITHUB_WORKSPACE to safe.directory: %v\n", err)
+		}
+	}
+
+	// Add wildcard to allow all directories (belt and suspenders approach)
+	cmd = exec.Command("git", "config", "--global", "--add", "safe.directory", "*")
+	if err := cmd.Run(); err != nil {
+		// Non-fatal: specific directories should already work
+		fmt.Printf("Warning: failed to add wildcard to safe.directory: %v\n", err)
+	}
+
+	return nil
+}
+
 // handleScanTarget processes the scan input parameter and checks out the appropriate ref.
 // Supported values:
 // - "head": checkout the default branch (main/master)
@@ -184,6 +220,12 @@ func isDebugEnabled() bool {
 //
 // If scan is empty or contains only whitespace, it defaults to "latest_release".
 func handleScanTarget(scan string) error {
+	// Configure git safe directories to work in Docker containers
+	if err := configureGitSafeDirectory(); err != nil {
+		fmt.Printf("Warning: %v\n", err)
+		// Continue anyway - git operations might still work
+	}
+
 	// Normalize the scan value - empty or whitespace defaults to latest_release
 	scan = strings.TrimSpace(scan)
 	if scan == "" {
