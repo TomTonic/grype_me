@@ -60,6 +60,7 @@ type Config struct {
 	OutputFile     string
 	VariablePrefix string
 	OnlyFixed      bool
+	DBUpdate       bool
 	Debug          bool
 }
 
@@ -78,12 +79,24 @@ func run() error {
 	}
 
 	// Determine scan target
-	target, err := determineScanTarget(config)
+	target, scanDir, err := determineScanTarget(config)
 	if err != nil {
 		return fmt.Errorf("failed to determine scan target: %w", err)
 	}
 
+	// Clean up temporary worktree if one was created
+	if scanDir != "" {
+		defer cleanupWorktree(scanDir)
+	}
+
 	fmt.Printf("Grype scan target: %s\n", target)
+
+	// Update vulnerability database if requested
+	if config.DBUpdate {
+		if err := updateGrypeDB(); err != nil {
+			return fmt.Errorf("failed to update grype database: %w", err)
+		}
+	}
 
 	// Create a temporary file for grype output
 	tmpFile, err := os.CreateTemp("", "grype-output-*.json")
@@ -149,6 +162,7 @@ func loadConfig() Config {
 		OutputFile:     getEnv("INPUT_OUTPUT-FILE", ""),
 		VariablePrefix: getEnv("INPUT_VARIABLE-PREFIX", "GRYPE_"),
 		OnlyFixed:      strings.EqualFold(getEnv("INPUT_ONLY-FIXED", "false"), "true"),
+		DBUpdate:       strings.EqualFold(getEnv("INPUT_DB-UPDATE", "false"), "true"),
 		Debug:          strings.EqualFold(getEnv("INPUT_DEBUG", "false"), "true"),
 	}
 }
@@ -180,7 +194,8 @@ func printDebugEnv() {
 }
 
 // determineScanTarget figures out what to scan based on config inputs
-func determineScanTarget(config Config) (string, error) {
+// Returns (target, tempDir, error) where tempDir is set if a temporary worktree was created
+func determineScanTarget(config Config) (string, string, error) {
 	// Count how many artifact modes are specified
 	artifactModes := 0
 	if config.Image != "" {
@@ -195,30 +210,30 @@ func determineScanTarget(config Config) (string, error) {
 
 	// Check for mutual exclusivity
 	if artifactModes > 1 {
-		return "", fmt.Errorf("only one of image, path, or sbom can be specified")
+		return "", "", fmt.Errorf("only one of image, path, or sbom can be specified")
 	}
 
 	if artifactModes > 0 && config.Scan != "" {
-		return "", fmt.Errorf("scan cannot be used together with image, path, or sbom")
+		return "", "", fmt.Errorf("scan cannot be used together with image, path, or sbom")
 	}
 
 	// Artifact-based scanning
 	if config.Image != "" {
-		return config.Image, nil
+		return config.Image, "", nil
 	}
 	if config.Path != "" {
 		// Grype uses dir: prefix for directories, file: for files
 		info, err := os.Stat(config.Path)
 		if err != nil {
-			return "", fmt.Errorf("path %q not found: %w", config.Path, err)
+			return "", "", fmt.Errorf("path %q not found: %w", config.Path, err)
 		}
 		if info.IsDir() {
-			return "dir:" + config.Path, nil
+			return "dir:" + config.Path, "", nil
 		}
-		return "file:" + config.Path, nil
+		return "file:" + config.Path, "", nil
 	}
 	if config.SBOM != "" {
-		return "sbom:" + config.SBOM, nil
+		return "sbom:" + config.SBOM, "", nil
 	}
 
 	// Repository-based scanning (default mode)
@@ -231,7 +246,8 @@ func determineScanTarget(config Config) (string, error) {
 }
 
 // handleRepoScan handles repository-based scanning (latest_release, head, or specific ref)
-func handleRepoScan(scan string) (string, error) {
+// Returns (target, tempDir, error) where tempDir is set if a temporary worktree was created
+func handleRepoScan(scan string) (string, string, error) {
 	// Configure git safe directories for Docker container environment
 	if err := configureGitSafeDirectory(); err != nil {
 		fmt.Printf("Warning: %v\n", err)
@@ -244,27 +260,31 @@ func handleRepoScan(scan string) (string, error) {
 		// Scan current working directory as-is - no git operations needed
 		// The user has already checked out what they want via actions/checkout
 		fmt.Println("Scanning current working directory (head mode)")
-		return "dir:.", nil
+		return "dir:.", "", nil
 
 	case "latest_release":
-		// Get and checkout the latest release tag
+		// Get the latest release tag
 		latestTag, err := getLatestReleaseTag()
 		if err != nil {
-			return "", fmt.Errorf("could not determine latest release: %w", err)
+			return "", "", fmt.Errorf("could not determine latest release: %w", err)
 		}
 		fmt.Printf("Found latest release: %s\n", latestTag)
-		if err := checkoutRef(latestTag); err != nil {
-			return "", fmt.Errorf("failed to checkout %s: %w", latestTag, err)
+		// Checkout to temp worktree to avoid modifying user's workspace
+		scanDir, err := checkoutToWorktree(latestTag)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to checkout %s: %w", latestTag, err)
 		}
-		return "dir:.", nil
+		return "dir:" + scanDir, scanDir, nil
 
 	default:
 		// Treat as a specific tag or branch name
 		fmt.Printf("Checking out ref: %s\n", scan)
-		if err := checkoutRef(scan); err != nil {
-			return "", fmt.Errorf("failed to checkout %s: %w", scan, err)
+		// Checkout to temp worktree to avoid modifying user's workspace
+		scanDir, err := checkoutToWorktree(scan)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to checkout %s: %w", scan, err)
 		}
-		return "dir:.", nil
+		return "dir:" + scanDir, scanDir, nil
 	}
 }
 
@@ -286,10 +306,6 @@ func configureGitSafeDirectory() error {
 		cmd = exec.Command("git", "config", "--global", "--add", "safe.directory", workspace)
 		_ = cmd.Run() // Non-fatal
 	}
-
-	// Add wildcard for safety
-	cmd = exec.Command("git", "config", "--global", "--add", "safe.directory", "*")
-	_ = cmd.Run() // Non-fatal
 
 	return nil
 }
@@ -318,7 +334,7 @@ func getLatestReleaseTag() (string, error) {
 
 	tags := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(tags) == 0 || tags[0] == "" {
-		return "", fmt.Errorf("no tags found in repository")
+		return "", fmt.Errorf("no release tags found in repository. Use 'scan: head' to scan the current checkout, or create a semver tag (e.g., v1.0.0)")
 	}
 
 	// Filter out pre-release tags
@@ -371,17 +387,66 @@ func validateRefName(ref string) error {
 	return nil
 }
 
-// checkoutRef checks out a specific git ref
-func checkoutRef(ref string) error {
+// checkoutToWorktree creates a temporary git worktree for the given ref
+// This avoids modifying the user's workspace state
+func checkoutToWorktree(ref string) (string, error) {
 	if err := validateRefName(ref); err != nil {
-		return fmt.Errorf("invalid ref %q: %w", ref, err)
+		return "", fmt.Errorf("invalid ref %q: %w", ref, err)
 	}
 
-	fmt.Printf("Checking out: %s\n", ref)
-	cmd := exec.Command("git", "checkout", ref)
+	// Create a temporary directory for the worktree
+	tmpDir, err := os.MkdirTemp("", "grype-scan-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp directory: %w", err)
+	}
+
+	fmt.Printf("Creating temporary worktree at %s for ref %s\n", tmpDir, ref)
+
+	// Add the worktree
+	cmd := exec.Command("git", "worktree", "add", "--detach", tmpDir, ref)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		// Clean up temp dir on failure
+		_ = os.RemoveAll(tmpDir)
+		return "", fmt.Errorf("failed to create worktree: %w", err)
+	}
+
+	return tmpDir, nil
+}
+
+// cleanupWorktree removes a temporary git worktree and its directory
+func cleanupWorktree(worktreeDir string) {
+	if worktreeDir == "" {
+		return
+	}
+
+	fmt.Printf("Cleaning up temporary worktree at %s\n", worktreeDir)
+
+	// Remove the worktree from git's tracking
+	cmd := exec.Command("git", "worktree", "remove", "--force", worktreeDir)
+	if err := cmd.Run(); err != nil {
+		// If git worktree remove fails, try to at least remove the directory
+		fmt.Printf("Warning: git worktree remove failed: %v\n", err)
+	}
+
+	// Ensure the directory is removed
+	if err := os.RemoveAll(worktreeDir); err != nil {
+		fmt.Printf("Warning: failed to remove worktree directory: %v\n", err)
+	}
+}
+
+// updateGrypeDB updates the Grype vulnerability database
+func updateGrypeDB() error {
+	fmt.Println("Updating Grype vulnerability database...")
+	cmd := exec.Command("grype", "db", "update")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("grype db update failed: %w", err)
+	}
+	fmt.Println("Database update complete")
+	return nil
 }
 
 func runGrypeScan(config Config, target, outputPath string) error {

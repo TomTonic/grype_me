@@ -1,0 +1,65 @@
+---
+name: Move Action Tags
+
+'on':
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  move-tags:
+    name: Update moving tags (vX, vX.Y)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update moving tags
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const tagName = context.ref.replace('refs/tags/', '');
+            if (!/^v\d+(?:\.\d+){0,2}$/.test(tagName)) {
+              core.info(`Skipping non-semver tag: ${tagName}`);
+              return;
+            }
+
+            const version = tagName.replace(/^v/, '');
+            const parts = version.split('.');
+            const major = `v${parts[0]}`;
+            const minor = parts.length >= 2 ? `v${parts[0]}.${parts[1]}` : null;
+
+            const { data: ref } = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `tags/${tagName}`,
+            });
+            const sha = ref.object.sha;
+
+            async function upsertTag(tag) {
+              const refName = `refs/tags/${tag}`;
+              try {
+                await github.rest.git.updateRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: `tags/${tag}`,
+                  sha,
+                  force: true,
+                });
+                core.info(`Updated ${refName} -> ${sha}`);
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.git.createRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: refName,
+                  sha,
+                });
+                core.info(`Created ${refName} -> ${sha}`);
+              }
+            }
+
+            await upsertTag(major);
+            if (minor) {
+              await upsertTag(minor);
+            }

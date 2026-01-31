@@ -1,5 +1,5 @@
 ---
-name: 'grype-scan my project'
+name: 'Grype-scan Me'
 description: 'Scan your repository for vulnerabilities using Anchore Grype (software supply chain security)'
 branding:
   icon: 'shield'
@@ -69,6 +69,13 @@ inputs:
       Only report vulnerabilities that have a fix available.
     required: false
     default: 'false'
+  db-update:
+    description: >-
+      Update the vulnerability database before scanning. The image ships with
+      a pre-downloaded DB (max 24h old). Set to 'true' for critical scans
+      requiring the absolute latest data. Default: 'false' (use built-in DB).
+    required: false
+    default: 'false'
   debug:
     description: >-
       Enable debug output (prints environment variables when true).
@@ -96,4 +103,4 @@ outputs:
 
 runs:
   using: 'docker'
-  image: 'Dockerfile'
+  image: 'docker://ghcr.io/tomtonic/grype_me:v1'
