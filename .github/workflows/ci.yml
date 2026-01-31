@@ -78,7 +78,7 @@ jobs:
         run: grype db update
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./cmd/grype_me/...
 
       - name: Display test coverage
         run: go tool cover -func=coverage.txt
@@ -111,7 +111,7 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Build application
-        run: go build -v -o grype-action .
+        run: go build -v -o grype-action ./cmd/grype_me
 
       - name: Verify binary
         run: ./grype-action --help || echo "Binary built successfully"
