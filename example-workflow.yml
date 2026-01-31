@@ -44,7 +44,6 @@ jobs:
           
           # Optional: Output configuration
           output-file: 'grype-results.json'
-          output-format: 'json'  # json, sarif, table, cyclonedx-json, spdx-json
           
           # Optional: Filter results
           only-fixed: false  # Set to 'true' to only show fixable vulnerabilities
