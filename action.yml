@@ -109,10 +109,9 @@ outputs:
     description: 'Path to the JSON output file (if output-file was specified)'
   badge-url:
     description: >-
-      shields.io badge URL showing vulnerability summary.
+      shields.io URL to create a badge showing a vulnerability summary.
       Color indicates severity: green (none), yellowgreen (low),
       yellow (medium), orange (high), red (critical).
-      Use in README: ![Vulnerabilities](<badge-url>)
 
 runs:
   using: 'docker'
