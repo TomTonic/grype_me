@@ -325,7 +325,7 @@ func getLatestReleaseTag() (string, error) {
 
 	tags := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(tags) == 0 || tags[0] == "" {
-		return "", fmt.Errorf("no tags found in repository")
+		return "", fmt.Errorf("no release tags found in repository. Use 'scan: head' to scan the current checkout, or create a semver tag (e.g., v1.0.0)")
 	}
 
 	// Filter out pre-release tags

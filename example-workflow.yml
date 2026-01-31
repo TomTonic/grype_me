@@ -80,6 +80,20 @@ jobs:
           path: grype-results.json
           retention-days: 30
 
+      # Optional: Create issue on critical vulnerabilities
+      # - name: Create issue on critical CVEs
+      #   if: steps.grype-scan.outputs.critical > 0
+      #   uses: actions/github-script@v8
+      #   with:
+      #     script: |
+      #       await github.rest.issues.create({
+      #         owner: context.repo.owner,
+      #         repo: context.repo.repo,
+      #         title: '🚨 Critical vulnerabilities detected',
+      #         body: `Found ${{ steps.grype-scan.outputs.critical }} critical CVEs.\n\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+      #         labels: ['security', 'critical']
+      #       });
+
 # Alternative examples:
 #
 # Scan a container image after building:
