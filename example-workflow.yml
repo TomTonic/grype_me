@@ -71,6 +71,11 @@ jobs:
           echo "| Low | $low |" >> $GITHUB_STEP_SUMMARY
           total="${{ steps.grype-scan.outputs.cve-count }}"
           echo "| **Total** | **$total** |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Badge URL:** ${{ steps.grype-scan.outputs.badge-url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          badge_url="${{ steps.grype-scan.outputs.badge-url }}"
+          echo "![Vulnerabilities]($badge_url)" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload scan results
         if: always()

@@ -543,3 +543,205 @@ func TestGrypeOutputJSONMarshaling(t *testing.T) {
 		t.Errorf("DBBuilt() = %v, want 2024-01-01", unmarshaled.DBBuilt())
 	}
 }
+
+// TestGenerateBadgeURL tests the badge URL generation
+func TestGenerateBadgeURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		stats    Stats
+		label    string
+		wantURL  string
+		contains []string
+	}{
+		{
+			name:  "no vulnerabilities",
+			stats: Stats{Total: 0},
+			label: "vulnerabilities",
+			contains: []string{
+				"https://img.shields.io/badge/",
+				"vulnerabilities",
+				"none",
+				"brightgreen",
+			},
+		},
+		{
+			name:  "critical vulnerabilities",
+			stats: Stats{Total: 2, Critical: 2},
+			label: "vulnerabilities",
+			contains: []string{
+				"https://img.shields.io/badge/",
+				"critical",
+			},
+		},
+		{
+			name:  "high vulnerabilities",
+			stats: Stats{Total: 3, High: 3},
+			label: "security",
+			contains: []string{
+				"https://img.shields.io/badge/",
+				"security",
+				"high",
+				"orange",
+			},
+		},
+		{
+			name:  "medium vulnerabilities",
+			stats: Stats{Total: 5, Medium: 5},
+			label: "CVEs",
+			contains: []string{
+				"https://img.shields.io/badge/",
+				"CVEs",
+				"medium",
+				"yellow",
+			},
+		},
+		{
+			name:  "low vulnerabilities",
+			stats: Stats{Total: 10, Low: 10},
+			label: "scan results",
+			contains: []string{
+				"https://img.shields.io/badge/",
+				"low",
+				"yellowgreen",
+			},
+		},
+		{
+			name:  "mixed vulnerabilities",
+			stats: Stats{Total: 10, Critical: 1, High: 2, Medium: 3, Low: 4},
+			label: "vulnerabilities",
+			contains: []string{
+				"https://img.shields.io/badge/",
+				"critical",
+			},
+		},
+		{
+			name:  "label with spaces",
+			stats: Stats{Total: 0},
+			label: "security scan",
+			contains: []string{
+				"https://img.shields.io/badge/",
+				"security%20scan",
+				"brightgreen",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := generateBadgeURL(tt.stats, tt.label)
+			for _, substr := range tt.contains {
+				if !strings.Contains(got, substr) {
+					t.Errorf("generateBadgeURL() = %v, want to contain %q", got, substr)
+				}
+			}
+		})
+	}
+}
+
+// TestFormatBadgeMessage tests the badge message formatting
+func TestFormatBadgeMessage(t *testing.T) {
+	tests := []struct {
+		name  string
+		stats Stats
+		want  string
+	}{
+		{
+			name:  "no vulnerabilities",
+			stats: Stats{Total: 0},
+			want:  "none",
+		},
+		{
+			name:  "only critical",
+			stats: Stats{Total: 2, Critical: 2},
+			want:  "2 critical",
+		},
+		{
+			name:  "only high",
+			stats: Stats{Total: 3, High: 3},
+			want:  "3 high",
+		},
+		{
+			name:  "critical and high",
+			stats: Stats{Total: 5, Critical: 2, High: 3},
+			want:  "2 critical | 3 high",
+		},
+		{
+			name:  "all severities",
+			stats: Stats{Total: 10, Critical: 1, High: 2, Medium: 3, Low: 4},
+			want:  "1 critical | 2 high | 3 medium | 4 low",
+		},
+		{
+			name:  "only other",
+			stats: Stats{Total: 5, Other: 5},
+			want:  "5 other",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatBadgeMessage(tt.stats)
+			if got != tt.want {
+				t.Errorf("formatBadgeMessage() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestDetermineBadgeColor tests the badge color determination
+func TestDetermineBadgeColor(t *testing.T) {
+	tests := []struct {
+		name  string
+		stats Stats
+		want  string
+	}{
+		{
+			name:  "no vulnerabilities",
+			stats: Stats{Total: 0},
+			want:  "brightgreen",
+		},
+		{
+			name:  "critical",
+			stats: Stats{Critical: 1},
+			want:  "critical",
+		},
+		{
+			name:  "high",
+			stats: Stats{High: 1},
+			want:  "orange",
+		},
+		{
+			name:  "medium",
+			stats: Stats{Medium: 1},
+			want:  "yellow",
+		},
+		{
+			name:  "low",
+			stats: Stats{Low: 1},
+			want:  "yellowgreen",
+		},
+		{
+			name:  "other",
+			stats: Stats{Other: 1},
+			want:  "yellowgreen",
+		},
+		{
+			name:  "critical takes precedence",
+			stats: Stats{Critical: 1, High: 2, Medium: 3, Low: 4},
+			want:  "critical",
+		},
+		{
+			name:  "high takes precedence over medium",
+			stats: Stats{High: 1, Medium: 2, Low: 3},
+			want:  "orange",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := determineBadgeColor(tt.stats)
+			if got != tt.want {
+				t.Errorf("determineBadgeColor() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
