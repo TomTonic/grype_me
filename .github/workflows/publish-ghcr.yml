@@ -26,6 +26,8 @@ jobs:
       packages: read
     outputs:
       grype_version: ${{ steps.check.outputs.grype_version }}
+      action_version: ${{ steps.check.outputs.action_version }}
+      db_built: ${{ steps.check.outputs.db_built }}
       publish: ${{ steps.check.outputs.publish }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -47,8 +49,44 @@ jobs:
               repo: 'grype'
             });
             const grypeVersion = release.data.tag_name.replace(/^v/, '');
-            const tag = `grype-${grypeVersion}`;
             core.info(`Latest grype release: ${grypeVersion}`);
+
+            // Fetch latest Grype DB metadata from the same default endpoint Grype uses
+            // (see grype/db/v6/distribution DefaultConfig().LatestURL).
+            const dbLatestUrl = 'https://grype.anchore.io/databases/v6/latest.json';
+            const dbLatestResp = await fetch(dbLatestUrl);
+            if (!dbLatestResp.ok) {
+              throw new Error(`Failed to fetch Grype DB latest.json (${dbLatestUrl}): HTTP ${dbLatestResp.status}`);
+            }
+
+            const dbLatest = await dbLatestResp.json();
+            const dbBuiltRaw = dbLatest?.built || dbLatest?.archive?.built;
+            if (typeof dbBuiltRaw !== 'string' || !dbBuiltRaw.includes('T')) {
+              throw new Error(`Unexpected Grype DB latest.json format: missing/invalid built field`);
+            }
+
+            // Docker/OCI tags cannot contain ':' so we need a tag-safe representation.
+            // Example: 2026-01-31T06:20:12Z -> 2026-01-31T06-20-12Z
+            const dbBuiltTag = dbBuiltRaw.replace(/[^A-Za-z0-9_.-]/g, '-');
+            core.info(`Latest Grype DB built: ${dbBuiltRaw} (tag-safe: ${dbBuiltTag})`);
+
+            // Get latest action release for scheduled builds
+            let actionVersion = '';
+            try {
+              const actionRelease = await github.rest.repos.getLatestRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo
+              });
+              actionVersion = actionRelease.data.tag_name.replace(/^v/, '');
+              core.info(`Latest action release: ${actionVersion}`);
+            } catch (error) {
+              if (error.status === 404) {
+                actionVersion = '1.0.0';
+                core.info('No action release found, using default version 1.0.0');
+              } else {
+                throw error;
+              }
+            }
 
             const packageName = context.repo.repo;
             let versions = [];
@@ -78,12 +116,33 @@ jobs:
               core.info('No existing GHCR package found yet.');
             }
 
-            const hasTag = versions.some((version) =>
-              (version.metadata?.container?.tags || []).includes(tag)
-            );
-            core.info(`GHCR tag ${tag} exists: ${hasTag}`);
+            // Determine which tag to check based on event
+            const eventName = context.eventName;
+            let targetTag;
+            if (eventName === 'release') {
+              const releaseTag = context.payload.release?.tag_name || '';
+              targetTag = releaseTag ? `${releaseTag}-release` : '';
+            } else {
+              targetTag = `v${actionVersion}_grype-${grypeVersion}_db-${dbBuilt}`;
+            }
+
+            let hasTag = false;
+            if (targetTag) {
+              hasTag = versions.some((version) =>
+                (version.metadata?.container?.tags || []).includes(targetTag)
+              );
+              core.info(`GHCR tag ${targetTag} exists: ${hasTag}`);
+            } else {
+              core.info('No target tag determined; will publish.');
+            }
+
+            const publish = eventName === 'release' ? 'true' : (hasTag ? 'false' : 'true');
+
             core.setOutput('grype_version', grypeVersion);
-            core.setOutput('publish', hasTag ? 'false' : 'true');
+            core.setOutput('action_version', actionVersion);
+            core.setOutput('db_built', dbBuiltTag);
+            core.setOutput('target_tag', targetTag || '');
+            core.setOutput('publish', publish);
 
   publish:
     name: Publish to GHCR
@@ -118,13 +177,27 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           GRYPE_VERSION: ${{ needs.grype-release.outputs.grype_version }}
+          ACTION_VERSION: ${{ needs.grype-release.outputs.action_version }}
+          DB_BUILT: ${{ needs.grype-release.outputs.db_built }}
         run: |
           IMAGE_NAME="ghcr.io/${{ github.repository }}"
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           if [ "$EVENT_NAME" = "release" ]; then
-            TAGS="${IMAGE_NAME}:${RELEASE_TAG},${IMAGE_NAME}:latest"
+            # Manual release: vX.Y.Z-release + moving tags
+            VERSION="${RELEASE_TAG#v}"
+            MAJOR="v${VERSION%%.*}"
+            MINOR="v${VERSION%.*}"
+            SPECIFIC_TAG="${IMAGE_NAME}:v${VERSION}-release"
+            MOVING_TAGS="${IMAGE_NAME}:${RELEASE_TAG},${IMAGE_NAME}:${MAJOR},${IMAGE_NAME}:${MINOR},${IMAGE_NAME}:latest"
+            TAGS="${SPECIFIC_TAG},${MOVING_TAGS}"
           else
-            TAGS="${IMAGE_NAME}:grype-${GRYPE_VERSION}"
+            # Automatic build: vX.Y.Z_grype-A.B.C_db-YYYY-MM-DD + moving tags
+            VERSION="${ACTION_VERSION}"
+            MAJOR="v${VERSION%%.*}"
+            MINOR="v${VERSION%.*}"
+            SPECIFIC_TAG="${IMAGE_NAME}:v${VERSION}_grype-${GRYPE_VERSION}_db-${DB_BUILT}"
+            MOVING_TAGS="${IMAGE_NAME}:v${VERSION},${IMAGE_NAME}:${MAJOR},${IMAGE_NAME}:${MINOR},${IMAGE_NAME}:latest"
+            TAGS="${SPECIFIC_TAG},${MOVING_TAGS}"
           fi
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
 
@@ -136,3 +209,87 @@ jobs:
           tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  verify-published:
+    name: Verify Published Image
+    runs-on: ubuntu-latest
+    needs: [publish, grype-release]
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Wait for GHCR propagation
+        run: sleep 10
+
+      - name: Log in to GHCR (pull)
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull and run published image (v1 tag)
+        id: grype-scan-published
+        run: |
+          set -euo pipefail
+
+          IMAGE_NAME="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          IMAGE_TAG="v1"
+          IMAGE_REF="${IMAGE_NAME}:${IMAGE_TAG}"
+
+          echo "Pulling ${IMAGE_REF}"
+          docker pull "${IMAGE_REF}"
+
+          echo "Running ${IMAGE_REF}"
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/github/workspace" \
+            -e GITHUB_WORKSPACE=/github/workspace \
+            -e GITHUB_REPOSITORY="${GITHUB_REPOSITORY}" \
+            -e GITHUB_OUTPUT=/github/workspace/github_output_published.txt \
+            -e INPUT_SCAN=head \
+            -e INPUT_OUTPUT-FILE=grype-results-published.json \
+            -e INPUT_VARIABLE-PREFIX=GRYPE_PUBLISHED_ \
+            -e INPUT_FAIL-BUILD=false \
+            -e INPUT_SEVERITY-CUTOFF=medium \
+            -e INPUT_ONLY-FIXED=false \
+            -e INPUT_DB-UPDATE=false \
+            -e INPUT_DEBUG=false \
+            "${IMAGE_REF}"
+
+          if [ -f "${GITHUB_WORKSPACE}/github_output_published.txt" ]; then
+            echo "=== Action Outputs (published image) ==="
+            cat "${GITHUB_WORKSPACE}/github_output_published.txt"
+            while IFS='=' read -r key value; do
+              echo "${key}=${value}" >> "$GITHUB_OUTPUT"
+            done < "${GITHUB_WORKSPACE}/github_output_published.txt"
+          else
+            echo "ERROR: Expected GITHUB_OUTPUT file not found" >&2
+            exit 1
+          fi
+
+      - name: Verify outputs
+        run: |
+          echo "=== Published Image Test Results ==="
+          echo "Grype Version: ${{ steps.grype-scan-published.outputs.grype-version }}"
+          echo "Database Version: ${{ steps.grype-scan-published.outputs.db-version }}"
+          echo "Total CVEs: ${{ steps.grype-scan-published.outputs.cve-count }}"
+
+          if [ -z "${{ steps.grype-scan-published.outputs.grype-version }}" ]; then
+            echo "ERROR: Grype version output is empty (published image)" >&2
+            exit 1
+          fi
+
+          if [ ! -f grype-results-published.json ]; then
+            echo "ERROR: Output file grype-results-published.json not found" >&2
+            exit 1
+          fi
+
+          echo "✓ Published image (v1) works correctly"

@@ -167,7 +167,7 @@ func TestDetermineScanTarget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			target, err := determineScanTarget(tt.config)
+			target, _, err := determineScanTarget(tt.config)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("determineScanTarget() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -452,12 +452,15 @@ func TestConfigureGitSafeDirectory(t *testing.T) {
 
 // TestHandleRepoScanHead tests head mode
 func TestHandleRepoScanHead(t *testing.T) {
-	target, err := handleRepoScan("head")
+	target, tempDir, err := handleRepoScan("head")
 	if err != nil {
 		t.Fatalf("handleRepoScan(head) error = %v", err)
 	}
 	if target != "dir:." {
 		t.Errorf("target = %v, want dir:.", target)
+	}
+	if tempDir != "" {
+		t.Errorf("tempDir = %v, want empty for head mode", tempDir)
 	}
 }
 
@@ -482,7 +485,7 @@ go 1.21
 		VariablePrefix: "TEST_",
 	}
 
-	target, err := determineScanTarget(config)
+	target, _, err := determineScanTarget(config)
 	if err != nil {
 		t.Fatalf("determineScanTarget() error = %v", err)
 	}

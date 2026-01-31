@@ -2,6 +2,17 @@
 
 A lean GitHub Action to scan for vulnerabilities using [Anchore Grype](https://github.com/anchore/grype).
 
+## Quick Start
+
+```yaml
+- uses: actions/checkout@v4
+  with: { fetch-depth: 0, fetch-tags: true }
+- uses: TomTonic/grype_me@v1
+  with: { scan: 'latest_release', fail-build: true, severity-cutoff: 'high' }
+```
+
+> **Note**: The default scan mode is `latest_release`, which scans your highest semver tag. If your repo has no tags yet, use `scan: 'head'` instead.
+
 ## Features
 
 - 🔍 Scans for vulnerabilities using the latest version of Grype
@@ -206,6 +217,7 @@ You can use **either** the `scan` input **or** one of `image`/`path`/`sbom` - th
 | `severity-cutoff` | Minimum severity to trigger build failure: `negligible`, `low`, `medium`, `high`, `critical` | No | `medium` |
 | `output-file` | Path to save scan results (JSON) | No | (no file saved) |
 | `only-fixed` | Only report vulnerabilities with a fix available | No | `false` |
+| `db-update` | Update vulnerability database before scanning (see [Performance](#performance)) | No | `false` |
 | `variable-prefix` | Prefix for environment variable names | No | `GRYPE_` |
 | `debug` | Print INPUT_/GITHUB_ environment variables (warning: may expose sensitive data) | No | `false` |
 
@@ -249,25 +261,70 @@ In addition to the outputs, the action sets environment variables with a configu
 - Works with any registry (Docker Hub, GHCR, ECR, etc.)
 - Build your image before scanning in the workflow
 
-## Migration Notes
+## Performance
 
-### Upgrading from versions with `repository` and `branch` parameters
+The action image includes a **pre-downloaded vulnerability database** (updated within the last 24 hours when the image was built). This eliminates the ~200MB database download on every scan, significantly improving startup time.
 
-The `repository` and `branch` input parameters have been replaced with a unified `scan` parameter. The default behavior now scans `latest_release` (highest semver tag).
+**When to use `db-update: true`:**
+- For critical security scans where you need the absolute latest CVE data
+- When the pre-baked database might be stale (images are rebuilt daily with new Grype releases)
 
-**Breaking change:** To maintain the previous behavior (scanning current checkout), explicitly set:
+**Typical scenarios:**
+- **Nightly scans** (default): Use the pre-baked DB — it's fresh enough and faster
+- **Pre-release security gates**: Consider `db-update: true` for maximum freshness
 
 ```yaml
-- uses: TomTonic/grype_me@v1
+- uses: tomtonic/grype_me@v1
   with:
-    scan: 'head'
+    scan: latest_release
+    db-update: true  # Download latest DB before scanning
 ```
 
-### New features in v2
+## Alerting Examples
 
-- **Artifact scanning**: Use `image`, `path`, or `sbom` inputs to scan pre-built artifacts
-- **Build failure**: Use `fail-build: true` with `severity-cutoff` to fail on vulnerabilities
-- **Fixed-only filter**: Use `only-fixed: true` to only show fixable vulnerabilities
+### Create GitHub Issue on Critical CVEs
+
+```yaml
+- name: Scan for vulnerabilities
+  id: grype
+  uses: TomTonic/grype_me@v1
+  with:
+    scan: 'latest_release'
+
+- name: Create issue on critical vulnerabilities
+  if: steps.grype.outputs.critical > 0
+  uses: actions/github-script@v7
+  with:
+    script: |
+      await github.rest.issues.create({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        title: '🚨 Critical vulnerabilities detected',
+        body: `Found ${{ steps.grype.outputs.critical }} critical CVEs in latest release.\n\nSee workflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+        labels: ['security', 'critical']
+      });
+```
+
+### Slack Notification
+
+```yaml
+- name: Scan for vulnerabilities
+  id: grype
+  uses: TomTonic/grype_me@v1
+  with:
+    scan: 'latest_release'
+
+- name: Notify Slack on vulnerabilities
+  if: steps.grype.outputs.cve-count > 0
+  uses: slackapi/slack-github-action@v1
+  with:
+    payload: |
+      {
+        "text": "🔒 Vulnerability scan: ${{ steps.grype.outputs.critical }} critical, ${{ steps.grype.outputs.high }} high, ${{ steps.grype.outputs.medium }} medium CVEs"
+      }
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+```
 
 ## License
 
