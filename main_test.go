@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,22 +50,6 @@ func checkoutTestDefaultBranchInDir(t *testing.T, dir string) string {
 
 	t.Fatalf("failed to checkout default branch in %s: neither 'master' nor 'main' exists", dir)
 	return ""
-}
-
-// getTestDefaultBranchName returns the name of the default branch (master or main)
-// by checking which one exists. Returns an error if neither exists.
-func getTestDefaultBranchName() (string, error) {
-	// Try to verify master exists
-	if err := exec.Command("git", "rev-parse", "--verify", "refs/heads/master").Run(); err == nil {
-		return "master", nil
-	}
-
-	// Try to verify main exists
-	if err := exec.Command("git", "rev-parse", "--verify", "refs/heads/main").Run(); err == nil {
-		return "main", nil
-	}
-
-	return "", fmt.Errorf("neither 'master' nor 'main' branch exists")
 }
 
 // TestValidateRefName tests the validateRefName function
