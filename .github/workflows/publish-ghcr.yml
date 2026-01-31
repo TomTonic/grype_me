@@ -27,6 +27,7 @@ jobs:
     outputs:
       grype_version: ${{ steps.check.outputs.grype_version }}
       action_version: ${{ steps.check.outputs.action_version }}
+      db_built: ${{ steps.check.outputs.db_built }}
       publish: ${{ steps.check.outputs.publish }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -49,6 +50,25 @@ jobs:
             });
             const grypeVersion = release.data.tag_name.replace(/^v/, '');
             core.info(`Latest grype release: ${grypeVersion}`);
+
+            // Fetch latest Grype DB metadata from the same default endpoint Grype uses
+            // (see grype/db/v6/distribution DefaultConfig().LatestURL).
+            const dbLatestUrl = 'https://grype.anchore.io/databases/v6/latest.json';
+            const dbLatestResp = await fetch(dbLatestUrl);
+            if (!dbLatestResp.ok) {
+              throw new Error(`Failed to fetch Grype DB latest.json (${dbLatestUrl}): HTTP ${dbLatestResp.status}`);
+            }
+
+            const dbLatest = await dbLatestResp.json();
+            const dbBuiltRaw = dbLatest?.built || dbLatest?.archive?.built;
+            if (typeof dbBuiltRaw !== 'string' || !dbBuiltRaw.includes('T')) {
+              throw new Error(`Unexpected Grype DB latest.json format: missing/invalid built field`);
+            }
+
+            // Docker/OCI tags cannot contain ':' so we need a tag-safe representation.
+            // Example: 2026-01-31T06:20:12Z -> 2026-01-31T06-20-12Z
+            const dbBuiltTag = dbBuiltRaw.replace(/[^A-Za-z0-9_.-]/g, '-');
+            core.info(`Latest Grype DB built: ${dbBuiltRaw} (tag-safe: ${dbBuiltTag})`);
 
             // Get latest action release for scheduled builds
             let actionVersion = '';
@@ -103,7 +123,7 @@ jobs:
               const releaseTag = context.payload.release?.tag_name || '';
               targetTag = releaseTag ? `${releaseTag}-release` : '';
             } else {
-              targetTag = `v${actionVersion}_grype-${grypeVersion}`;
+              targetTag = `v${actionVersion}_grype-${grypeVersion}_db-${dbBuilt}`;
             }
 
             let hasTag = false;
@@ -120,6 +140,7 @@ jobs:
 
             core.setOutput('grype_version', grypeVersion);
             core.setOutput('action_version', actionVersion);
+            core.setOutput('db_built', dbBuiltTag);
             core.setOutput('target_tag', targetTag || '');
             core.setOutput('publish', publish);
 
@@ -157,6 +178,7 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           GRYPE_VERSION: ${{ needs.grype-release.outputs.grype_version }}
           ACTION_VERSION: ${{ needs.grype-release.outputs.action_version }}
+          DB_BUILT: ${{ needs.grype-release.outputs.db_built }}
         run: |
           IMAGE_NAME="ghcr.io/${{ github.repository }}"
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
@@ -169,11 +191,11 @@ jobs:
             MOVING_TAGS="${IMAGE_NAME}:${RELEASE_TAG},${IMAGE_NAME}:${MAJOR},${IMAGE_NAME}:${MINOR},${IMAGE_NAME}:latest"
             TAGS="${SPECIFIC_TAG},${MOVING_TAGS}"
           else
-            # Automatic build: vX.Y.Z_grype-A.B.C + moving tags
+            # Automatic build: vX.Y.Z_grype-A.B.C_db-YYYY-MM-DD + moving tags
             VERSION="${ACTION_VERSION}"
             MAJOR="v${VERSION%%.*}"
             MINOR="v${VERSION%.*}"
-            SPECIFIC_TAG="${IMAGE_NAME}:v${VERSION}_grype-${GRYPE_VERSION}"
+            SPECIFIC_TAG="${IMAGE_NAME}:v${VERSION}_grype-${GRYPE_VERSION}_db-${DB_BUILT}"
             MOVING_TAGS="${IMAGE_NAME}:v${VERSION},${IMAGE_NAME}:${MAJOR},${IMAGE_NAME}:${MINOR},${IMAGE_NAME}:latest"
             TAGS="${SPECIFIC_TAG},${MOVING_TAGS}"
           fi

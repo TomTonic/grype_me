@@ -217,6 +217,7 @@ You can use **either** the `scan` input **or** one of `image`/`path`/`sbom` - th
 | `severity-cutoff` | Minimum severity to trigger build failure: `negligible`, `low`, `medium`, `high`, `critical` | No | `medium` |
 | `output-file` | Path to save scan results (JSON) | No | (no file saved) |
 | `only-fixed` | Only report vulnerabilities with a fix available | No | `false` |
+| `db-update` | Update vulnerability database before scanning (see [Performance](#performance)) | No | `false` |
 | `variable-prefix` | Prefix for environment variable names | No | `GRYPE_` |
 | `debug` | Print INPUT_/GITHUB_ environment variables (warning: may expose sensitive data) | No | `false` |
 
@@ -259,6 +260,25 @@ In addition to the outputs, the action sets environment variables with a configu
 - The image must be locally available or pullable
 - Works with any registry (Docker Hub, GHCR, ECR, etc.)
 - Build your image before scanning in the workflow
+
+## Performance
+
+The action image includes a **pre-downloaded vulnerability database** (updated within the last 24 hours when the image was built). This eliminates the ~200MB database download on every scan, significantly improving startup time.
+
+**When to use `db-update: true`:**
+- For critical security scans where you need the absolute latest CVE data
+- When the pre-baked database might be stale (images are rebuilt daily with new Grype releases)
+
+**Typical scenarios:**
+- **Nightly scans** (default): Use the pre-baked DB — it's fresh enough and faster
+- **Pre-release security gates**: Consider `db-update: true` for maximum freshness
+
+```yaml
+- uses: tomtonic/grype_me@v1
+  with:
+    scan: latest_release
+    db-update: true  # Download latest DB before scanning
+```
 
 ## Alerting Examples
 
