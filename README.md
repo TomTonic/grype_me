@@ -28,6 +28,31 @@ This action runs inside a Docker container with Grype pre-installed. It supports
    - `path`: Scan a directory or file path
    - `sbom`: Scan a Software Bill of Materials file
 
+### Repository mode: source-level scanning (best for Go)
+
+Repository mode is designed for **source-level** dependency scanning and works especially well for Go projects.
+Grype (via Syft) reads dependency manifests directly from the repo and builds an SBOM without compiling.
+
+How it works:
+1. Inspects the repository for supported dependency manifests (e.g., `go.mod`, `go.sum`, `package.json`, `requirements.txt`)
+2. Generates a dependency inventory (SBOM) from those files
+3. Matches detected packages against vulnerability databases
+
+What this means:
+- ✅ Source-declared dependencies are covered without a build
+- ✅ Great for Go module repos and nightly scans of tagged releases
+- ❌ Runtime-only or dynamically downloaded dependencies are **not** included unless you scan a build artifact
+
+When to use repository mode:
+- Go module repos that publish releases (use `scan: latest_release` for nightly scans)
+- PR/CI checks that only need source-level coverage (use `scan: head`)
+- Projects with clear manifest files and no required build steps for dependency discovery
+
+When to use artifact mode instead:
+- You need to scan compiled binaries, Docker images, or packaged distributions
+- Dependencies are produced during build time (e.g., vendor directories, bundled assets)
+- You need to **store** according binaries, Docker images, or packaged distributions for later/nightly scans
+
 ## Usage
 
 > **Quick Start**: Copy [`example-workflow.yml`](example-workflow.yml) to `.github/workflows/` in your repository for a ready-to-use vulnerability scanning setup.
