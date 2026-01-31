@@ -78,13 +78,12 @@ func run() error {
 		fmt.Println("======================================")
 	}
 
-	repository := getEnv("INPUT_REPOSITORY", ".")
-	branch := getEnv("INPUT_BRANCH", "")
+	scan := getEnv("INPUT_SCAN", "latest_release")
 	outputFile := getEnv("INPUT_OUTPUT-FILE", "")
 	variablePrefix := getEnv("INPUT_VARIABLE-PREFIX", "GRYPE_")
 
 	fmt.Printf("Starting Grype scan...\n")
-	fmt.Printf("Repository: %s\n", repository)
+	fmt.Printf("Scan target: %s\n", scan)
 	fmt.Printf("Output file: %s\n", outputFile)
 	fmt.Printf("Variable prefix: %s\n", variablePrefix)
 	fmt.Printf("GITHUB_WORKSPACE: %s\n", os.Getenv("GITHUB_WORKSPACE"))
@@ -95,15 +94,10 @@ func run() error {
 	} else {
 		fmt.Printf("Not in Docker container environment (/github/workspace does not exist)\n")
 	}
-	if branch != "" {
-		fmt.Printf("Branch: %s\n", branch)
-	}
 
-	// If a specific branch is requested and we're in a git repo, checkout that branch
-	if branch != "" && repository == "." {
-		if err := checkoutBranch(branch); err != nil {
-			fmt.Printf("Warning: Could not checkout branch %s: %v\n", branch, err)
-		}
+	// Handle the scan parameter
+	if err := handleScanTarget(scan); err != nil {
+		return fmt.Errorf("failed to prepare scan target: %w", err)
 	}
 
 	// Create a temporary file for grype output
@@ -119,8 +113,8 @@ func run() error {
 		_ = os.Remove(tmpFilePath)
 	}()
 
-	// Run grype scan
-	if err := runGrypeScan(repository, tmpFilePath); err != nil {
+	// Run grype scan on the current directory (we've already checked out the right ref)
+	if err := runGrypeScan(".", tmpFilePath); err != nil {
 		return fmt.Errorf("grype scan failed: %w", err)
 	}
 
@@ -182,7 +176,268 @@ func isDebugEnabled() bool {
 	return strings.EqualFold(value, "true")
 }
 
-func checkoutBranch(branch string) error {
+// configureGitSafeDirectory adds the current working directory to Git's safe.directory
+// configuration. This is necessary because Git (since v2.35.2) refuses to operate on
+// repositories owned by different users (CVE-2022-24765). In Docker containers,
+// the /github/workspace directory may be owned by a different user than the container runs as.
+func configureGitSafeDirectory() error {
+	// Get current working directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	// Add current directory to safe.directory
+	cmd := exec.Command("git", "config", "--global", "--add", "safe.directory", cwd)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to configure git safe.directory: %w", err)
+	}
+
+	// Also add /github/workspace if we're in a GitHub Actions environment
+	if workspace := os.Getenv("GITHUB_WORKSPACE"); workspace != "" && workspace != cwd {
+		cmd = exec.Command("git", "config", "--global", "--add", "safe.directory", workspace)
+		if err := cmd.Run(); err != nil {
+			// Non-fatal: we already added cwd
+			fmt.Printf("Warning: failed to add GITHUB_WORKSPACE to safe.directory: %v\n", err)
+		}
+	}
+
+	// Add wildcard to allow all directories (belt and suspenders approach)
+	cmd = exec.Command("git", "config", "--global", "--add", "safe.directory", "*")
+	if err := cmd.Run(); err != nil {
+		// Non-fatal: specific directories should already work
+		fmt.Printf("Warning: failed to add wildcard to safe.directory: %v\n", err)
+	}
+
+	return nil
+}
+
+// handleScanTarget processes the scan input parameter and checks out the appropriate ref.
+// Supported values:
+// - "head": checkout the default branch (main/master)
+// - "latest_release": checkout the latest release tag (default if empty/whitespace)
+// - any other value: treated as a tag or branch name
+//
+// If scan is empty or contains only whitespace, it defaults to "latest_release".
+func handleScanTarget(scan string) error {
+	// Configure git safe directories to work in Docker containers
+	if err := configureGitSafeDirectory(); err != nil {
+		fmt.Printf("Warning: %v\n", err)
+		// Continue anyway - git operations might still work
+	}
+
+	// Normalize the scan value - empty or whitespace defaults to latest_release
+	scan = strings.TrimSpace(scan)
+	if scan == "" {
+		scan = "latest_release"
+	}
+
+	fmt.Printf("Processing scan target: %s\n", scan)
+
+	switch strings.ToLower(scan) {
+	case "head":
+		// Checkout the default branch (typically main or master)
+		defaultBranch, err := getDefaultBranch()
+		if err != nil {
+			return fmt.Errorf("could not determine default branch: %w", err)
+		}
+		fmt.Printf("Checking out default branch: %s\n", defaultBranch)
+		return checkoutRef(defaultBranch)
+
+	case "latest_release":
+		// Get and checkout the latest release tag
+		latestTag, err := getLatestReleaseTag()
+		if err != nil {
+			return fmt.Errorf("could not determine latest release: %w", err)
+		}
+		fmt.Printf("Checking out latest release: %s\n", latestTag)
+		return checkoutRef(latestTag)
+
+	default:
+		// Treat as a tag or branch name
+		fmt.Printf("Checking out ref: %s\n", scan)
+		return checkoutRef(scan)
+	}
+}
+
+// getDefaultBranch returns the default branch name (e.g., "main" or "master")
+// It prioritizes remote refs over local refs since the remote default branch
+// is typically more authoritative.
+func getDefaultBranch() (string, error) {
+	// Check if git is available
+	if _, err := exec.LookPath("git"); err != nil {
+		return "", fmt.Errorf("git not found: %w", err)
+	}
+
+	// Check if current directory is a git repository
+	cmd := exec.Command("git", "rev-parse", "--git-dir")
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("not a git repository: %w", err)
+	}
+
+	// Try to get the default branch from origin
+	cmd = exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD")
+	output, err := cmd.Output()
+	if err == nil {
+		// Parse "refs/remotes/origin/main" -> "main"
+		ref := strings.TrimSpace(string(output))
+		parts := strings.Split(ref, "/")
+		if len(parts) > 0 {
+			return parts[len(parts)-1], nil
+		}
+	}
+
+	// refs/remotes/origin/HEAD not set - try to auto-detect it
+	fmt.Printf("refs/remotes/origin/HEAD not set, attempting to auto-detect...\n")
+	cmd = exec.Command("git", "remote", "set-head", "origin", "--auto")
+	if err := cmd.Run(); err == nil {
+		// Try again after setting HEAD
+		cmd = exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD")
+		output, err := cmd.Output()
+		if err == nil {
+			ref := strings.TrimSpace(string(output))
+			parts := strings.Split(ref, "/")
+			if len(parts) > 0 {
+				return parts[len(parts)-1], nil
+			}
+		}
+	}
+
+	// Fallback: try common default branch names
+	// Prioritize remote refs over local refs since the remote default branch
+	// is typically more authoritative
+	for _, branch := range []string{"main", "master"} {
+		// Check remote refs first
+		cmd = exec.Command("git", "rev-parse", "--verify", fmt.Sprintf("refs/remotes/origin/%s", branch))
+		if err := cmd.Run(); err == nil {
+			return branch, nil
+		}
+		// Then check local refs
+		cmd = exec.Command("git", "rev-parse", "--verify", fmt.Sprintf("refs/heads/%s", branch))
+		if err := cmd.Run(); err == nil {
+			return branch, nil
+		}
+	}
+
+	return "", fmt.Errorf("could not determine default branch")
+}
+
+// getLatestReleaseTag returns the latest release tag in the repository.
+// It uses semantic version sorting and filters out pre-release tags (e.g., v1.0.0-beta.1).
+// Note: "latest" means the highest version number, not the most recently created tag.
+func getLatestReleaseTag() (string, error) {
+	// Check if git is available
+	if _, err := exec.LookPath("git"); err != nil {
+		return "", fmt.Errorf("git not found: %w", err)
+	}
+
+	// Get all tags sorted by version (descending)
+	// Using git tag with version sort to get the latest version tag
+	cmd := exec.Command("git", "tag", "--sort=-v:refname")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to list tags: %w", err)
+	}
+
+	tags := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(tags) == 0 || tags[0] == "" {
+		return "", fmt.Errorf("no tags found in repository")
+	}
+
+	// Filter out pre-release tags (those containing '-' after a version pattern)
+	// Pre-release examples: v1.0.0-alpha, v2.0.0-beta.1, v1.0.0-rc1
+	for _, tag := range tags {
+		if !isPreReleaseTag(tag) {
+			return tag, nil
+		}
+	}
+
+	// If all tags are pre-release, return the highest one with a warning
+	fmt.Printf("Warning: All tags appear to be pre-release versions. Using highest version: %s\n", tags[0])
+	return tags[0], nil
+}
+
+// isPreReleaseTag checks if a tag appears to be a pre-release version.
+// It looks for patterns like v1.0.0-alpha, v1.0.0-beta.1, v1.0.0-rc1, etc.
+func isPreReleaseTag(tag string) bool {
+	// Remove leading 'v' or 'V' if present
+	normalized := strings.TrimPrefix(strings.TrimPrefix(tag, "v"), "V")
+
+	// Look for a hyphen that follows a version number pattern
+	// This matches: 1.0.0-alpha, 1.0-beta, 1-rc1, etc.
+	parts := strings.SplitN(normalized, "-", 2)
+	if len(parts) < 2 {
+		return false // No hyphen, not a pre-release
+	}
+
+	// Check if the first part looks like a version number (digits and dots)
+	versionPart := parts[0]
+	for _, c := range versionPart {
+		if c != '.' && (c < '0' || c > '9') {
+			return false // Contains non-version characters before hyphen
+		}
+	}
+
+	// If we have digits/dots followed by a hyphen and more content, it's pre-release
+	return len(versionPart) > 0 && len(parts[1]) > 0
+}
+
+// validateRefName checks if a git reference name is valid and safe to use.
+// It rejects refs containing control characters, null bytes, or other suspicious patterns.
+func validateRefName(ref string) error {
+	if ref == "" {
+		return fmt.Errorf("ref name cannot be empty")
+	}
+
+	// Check for control characters (ASCII 0-31 and 127)
+	for i, c := range ref {
+		if c < 32 || c == 127 {
+			return fmt.Errorf("ref name contains invalid control character at position %d", i)
+		}
+	}
+
+	// Check for null bytes (additional explicit check)
+	if strings.Contains(ref, "\x00") {
+		return fmt.Errorf("ref name contains null byte")
+	}
+
+	// Check for suspicious patterns that might indicate injection attempts
+	suspiciousPatterns := []string{
+		"..", // Path traversal
+		"~",  // Git reflog syntax
+		"^",  // Git parent syntax (could be valid but suspicious in user input)
+		":",  // Git revision syntax
+		"?",  // Wildcard
+		"*",  // Wildcard
+		"[",  // Wildcard/range
+		"\\", // Escape character
+		" ",  // Spaces (not valid in ref names)
+	}
+
+	for _, pattern := range suspiciousPatterns {
+		if strings.Contains(ref, pattern) {
+			return fmt.Errorf("ref name contains suspicious pattern %q", pattern)
+		}
+	}
+
+	// Git ref names cannot start or end with a dot or slash
+	if strings.HasPrefix(ref, ".") || strings.HasSuffix(ref, ".") {
+		return fmt.Errorf("ref name cannot start or end with a dot")
+	}
+	if strings.HasPrefix(ref, "/") || strings.HasSuffix(ref, "/") {
+		return fmt.Errorf("ref name cannot start or end with a slash")
+	}
+
+	return nil
+}
+
+// checkoutRef checks out a specific git reference (branch, tag, or commit)
+func checkoutRef(ref string) error {
+	// Validate the ref name before using it
+	if err := validateRefName(ref); err != nil {
+		return fmt.Errorf("invalid ref name %q: %w", ref, err)
+	}
+
 	// Check if git is available
 	if _, err := exec.LookPath("git"); err != nil {
 		return fmt.Errorf("git not found: %w", err)
@@ -194,8 +449,18 @@ func checkoutBranch(branch string) error {
 		return fmt.Errorf("not a git repository: %w", err)
 	}
 
-	// Checkout the branch
-	cmd = exec.Command("git", "checkout", branch)
+	// Fetch all refs to ensure we have the latest
+	fmt.Printf("Fetching refs...\n")
+	cmd = exec.Command("git", "fetch", "--all", "--tags")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("Warning: Could not fetch refs: %v\n", err)
+		// Continue anyway, the ref might already exist locally
+	}
+
+	// Checkout the ref
+	cmd = exec.Command("git", "checkout", ref)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

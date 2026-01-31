@@ -215,7 +215,7 @@ jobs:
         id: grype-scan
         uses: ./
         with:
-          repository: '.'
+          scan: 'head'
           output-file: 'grype-results.json'
           variable-prefix: 'GRYPE_'
 
