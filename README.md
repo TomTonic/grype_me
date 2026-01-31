@@ -249,26 +249,6 @@ In addition to the outputs, the action sets environment variables with a configu
 - Works with any registry (Docker Hub, GHCR, ECR, etc.)
 - Build your image before scanning in the workflow
 
-## Migration Notes
-
-### Upgrading from versions with `repository` and `branch` parameters
-
-The `repository` and `branch` input parameters have been replaced with a unified `scan` parameter. The default behavior now scans `latest_release` (highest semver tag).
-
-**Breaking change:** To maintain the previous behavior (scanning current checkout), explicitly set:
-
-```yaml
-- uses: TomTonic/grype_me@v1
-  with:
-    scan: 'head'
-```
-
-### New features in v2
-
-- **Artifact scanning**: Use `image`, `path`, or `sbom` inputs to scan pre-built artifacts
-- **Build failure**: Use `fail-build: true` with `severity-cutoff` to fail on vulnerabilities
-- **Fixed-only filter**: Use `only-fixed: true` to only show fixable vulnerabilities
-
 ## License
 
 This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.
