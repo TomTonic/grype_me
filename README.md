@@ -57,8 +57,7 @@ jobs:
         id: grype-scan
         uses: TomTonic/grype_me@v1
         with:
-          repository: '.'
-          branch: 'main'
+          scan: 'head'
           output-file: 'grype-results.json'
           variable-prefix: 'SCAN_'
       
@@ -84,8 +83,7 @@ jobs:
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `repository` | Repository path to scan (currently only supports "." for current repository) | No | `.` (current repository) |
-| `branch` | Branch to checkout before scanning (only works when repository is ".") | No | Current branch |
+| `scan` | What to scan: `latest_release` (highest stable version tag, sorted by semantic version - pre-release tags like v1.0.0-beta are skipped), `head` (default branch), or a specific tag/branch name. **Note:** `latest_release` requires at least one tag in the repository and uses local git tags (not the GitHub Releases API). Tags not following semantic versioning may not sort as expected. Use `head` if your repository has no tags. | No | `latest_release` |
 | `output-file` | Path to save JSON scan results | No | `` (no file saved) |
 | `variable-prefix` | Prefix for environment variable names | No | `GRYPE_` |
 | `debug` | Print INPUT_/GITHUB_ environment variables when `true` (warning: may expose sensitive data in logs) | No | `false` |
@@ -128,6 +126,20 @@ In addition to the outputs, the action sets environment variables with a configu
       echo "Found ${{ steps.grype-scan.outputs.critical }} critical vulnerabilities!"
       exit 1
     fi
+```
+
+## Migration Notes
+
+### Upgrading from versions with `repository` and `branch` parameters
+
+If you were previously using the `repository` and `branch` input parameters, these have been replaced with a unified `scan` parameter. The new `scan` parameter defaults to `latest_release`, which scans the highest semantic version tag in your repository.
+
+**Breaking change:** The default behavior has changed from scanning the current checkout to scanning the latest release tag. To maintain the previous behavior (scanning the current checkout), explicitly set `scan: 'head'`:
+
+```yaml
+- uses: TomTonic/grype_me@v1
+  with:
+    scan: 'head'  # Scan the default branch (previous default behavior)
 ```
 
 ## License

@@ -6,14 +6,20 @@ branding:
   color: 'blue'
 
 inputs:
-  repository:
-    description: 'Repository to scan (optional, defaults to current repository)'
+  scan:
+    description: >-
+      Specifies what to scan. Can be:
+      - 'latest_release': Scan the highest stable version tag (sorted by semantic
+        version, not chronological). Pre-release tags (e.g., v1.0.0-beta) are
+        skipped in favor of stable releases. Requires at least one tag in the
+        repository; use 'head' if your repository has no tags.
+      - 'head': Scan the head of the main/default branch
+      - A tag name: Scan a specific tag in the repository
+      - A branch name: Scan a specific branch in the repository
+      Note: Uses local git tags, not the GitHub Releases API. Tags not following
+      semantic versioning may not sort as expected.
     required: false
-    default: '.'
-  branch:
-    description: 'Branch to scan (optional, defaults to current branch)'
-    required: false
-    default: ''
+    default: 'latest_release'
   output-file:
     description: 'Path to save JSON scan results (optional)'
     required: false
