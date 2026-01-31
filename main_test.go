@@ -334,7 +334,7 @@ func TestParseGrypeOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpFile.Name())
+	t.Cleanup(func() { _ = os.Remove(tmpFile.Name()) })
 
 	grypeJSON := `{
 		"matches": [
@@ -495,8 +495,10 @@ go 1.21
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpFile.Name())
-	tmpFile.Close()
+	t.Cleanup(func() { _ = os.Remove(tmpFile.Name()) })
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("failed to close temp file: %v", err)
+	}
 
 	err = runGrypeScan(config, target, tmpFile.Name())
 	if err != nil {
