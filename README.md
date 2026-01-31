@@ -2,6 +2,17 @@
 
 A lean GitHub Action to scan for vulnerabilities using [Anchore Grype](https://github.com/anchore/grype).
 
+## Quick Start
+
+```yaml
+- uses: actions/checkout@v4
+  with: { fetch-depth: 0, fetch-tags: true }
+- uses: TomTonic/grype_me@v1
+  with: { scan: 'latest_release', fail-build: true, severity-cutoff: 'high' }
+```
+
+> **Note**: The default scan mode is `latest_release`, which scans your highest semver tag. If your repo has no tags yet, use `scan: 'head'` instead.
+
 ## Features
 
 - 🔍 Scans for vulnerabilities using the latest version of Grype
@@ -248,6 +259,52 @@ In addition to the outputs, the action sets environment variables with a configu
 - The image must be locally available or pullable
 - Works with any registry (Docker Hub, GHCR, ECR, etc.)
 - Build your image before scanning in the workflow
+
+## Alerting Examples
+
+### Create GitHub Issue on Critical CVEs
+
+```yaml
+- name: Scan for vulnerabilities
+  id: grype
+  uses: TomTonic/grype_me@v1
+  with:
+    scan: 'latest_release'
+
+- name: Create issue on critical vulnerabilities
+  if: steps.grype.outputs.critical > 0
+  uses: actions/github-script@v7
+  with:
+    script: |
+      await github.rest.issues.create({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        title: '🚨 Critical vulnerabilities detected',
+        body: `Found ${{ steps.grype.outputs.critical }} critical CVEs in latest release.\n\nSee workflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+        labels: ['security', 'critical']
+      });
+```
+
+### Slack Notification
+
+```yaml
+- name: Scan for vulnerabilities
+  id: grype
+  uses: TomTonic/grype_me@v1
+  with:
+    scan: 'latest_release'
+
+- name: Notify Slack on vulnerabilities
+  if: steps.grype.outputs.cve-count > 0
+  uses: slackapi/slack-github-action@v1
+  with:
+    payload: |
+      {
+        "text": "🔒 Vulnerability scan: ${{ steps.grype.outputs.critical }} critical, ${{ steps.grype.outputs.high }} high, ${{ steps.grype.outputs.medium }} medium CVEs"
+      }
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+```
 
 ## License
 
