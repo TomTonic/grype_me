@@ -85,9 +85,10 @@ inputs:
   badge-label:
     description: >-
       Label text for the generated shields.io badge URL.
-      Default: 'vulnerabilities'.
+      Default: auto-generated as 'grype scan <mode> (DB: YYYY-MM-DD)'.
+      Set to override with custom text.
     required: false
-    default: 'vulnerabilities'
+    default: ''
 
 outputs:
   grype-version:

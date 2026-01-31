@@ -138,7 +138,8 @@ func run() error {
 	}
 
 	// Set GitHub Actions outputs
-	if err := setOutputs(config.VariablePrefix, stats, output, jsonOutputPath, config.BadgeLabel); err != nil {
+	scanMode := determineScanMode(config)
+	if err := setOutputs(config.VariablePrefix, stats, output, jsonOutputPath, config.BadgeLabel, scanMode); err != nil {
 		return fmt.Errorf("failed to set outputs: %w", err)
 	}
 
@@ -168,7 +169,7 @@ func loadConfig() Config {
 		OnlyFixed:      strings.EqualFold(getEnv("INPUT_ONLY-FIXED", "false"), "true"),
 		DBUpdate:       strings.EqualFold(getEnv("INPUT_DB-UPDATE", "false"), "true"),
 		Debug:          strings.EqualFold(getEnv("INPUT_DEBUG", "false"), "true"),
-		BadgeLabel:     getEnv("INPUT_BADGE-LABEL", "vulnerabilities"),
+		BadgeLabel:     getEnv("INPUT_BADGE-LABEL", ""),
 	}
 }
 
@@ -605,7 +606,7 @@ func copyOutputFile(src, dst string) (string, error) {
 	return dst, nil
 }
 
-func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath, badgeLabel string) error {
+func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath, badgeLabel, scanMode string) error {
 	githubOutput := os.Getenv("GITHUB_OUTPUT")
 	if githubOutput == "" {
 		fmt.Println("Warning: GITHUB_OUTPUT not set, skipping output generation")
@@ -618,8 +619,14 @@ func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath, badge
 	}
 	defer func() { _ = f.Close() }()
 
+	// Generate badge label (auto-generate if empty)
+	label := badgeLabel
+	if label == "" {
+		label = buildBadgeLabel(scanMode)
+	}
+
 	// Generate badge URL
-	badgeURL := generateBadgeURL(stats, badgeLabel)
+	badgeURL := generateBadgeURL(stats, label, output.DBBuilt())
 
 	outputs := map[string]string{
 		"grype-version": output.Descriptor.Version,
@@ -686,15 +693,62 @@ func printSummary(stats Stats, output *GrypeOutput) {
 	fmt.Println("==========================")
 }
 
+// determineScanMode returns a human-readable scan mode string for the badge label.
+func determineScanMode(config Config) string {
+	if config.Image != "" {
+		return "image"
+	}
+	if config.Path != "" {
+		return "path"
+	}
+	if config.SBOM != "" {
+		return "sbom"
+	}
+	// Repository mode
+	scan := config.Scan
+	if scan == "" {
+		scan = "latest_release"
+	}
+	switch scan {
+	case "latest_release":
+		return "release"
+	case "head":
+		return "head"
+	default:
+		return "ref"
+	}
+}
+
+// buildBadgeLabel creates a badge label like "grype scan release"
+func buildBadgeLabel(scanMode string) string {
+	return fmt.Sprintf("grype scan %s", scanMode)
+}
+
+// extractDBDate extracts YYYY-MM-DD from a timestamp like "2026-01-30T12:34:56Z"
+func extractDBDate(timestamp string) string {
+	if len(timestamp) >= 10 {
+		return timestamp[:10]
+	}
+	return timestamp
+}
+
 // generateBadgeURL creates a shields.io badge URL based on scan statistics.
 // The badge displays vulnerability counts and uses colors based on severity:
 // - Green: No vulnerabilities
 // - Yellow: Only low/medium vulnerabilities
 // - Orange: High vulnerabilities present
 // - Red: Critical vulnerabilities present
-func generateBadgeURL(stats Stats, label string) string {
+func generateBadgeURL(stats Stats, label, dbBuilt string) string {
 	// Build the badge message showing counts
 	message := formatBadgeMessage(stats)
+
+	// Append DB build date to message
+	if dbBuilt != "" {
+		dbDate := extractDBDate(dbBuilt)
+		if dbDate != "" {
+			message = fmt.Sprintf("%s (db build %s)", message, dbDate)
+		}
+	}
 
 	// Determine badge color based on severity
 	color := determineBadgeColor(stats)
