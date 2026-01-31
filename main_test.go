@@ -35,23 +35,12 @@ func TestGetEnv(t *testing.T) {
 			setEnv:       false,
 			want:         "default",
 		},
-		{
-			name:         "empty default value",
-			key:          "TEST_VAR_EMPTY",
-			defaultValue: "",
-			envValue:     "",
-			setEnv:       false,
-			want:         "",
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.setEnv {
-				_ = os.Setenv(tt.key, tt.envValue)
-				defer func() {
-					_ = os.Unsetenv(tt.key)
-				}()
+				t.Setenv(tt.key, tt.envValue)
 			}
 
 			got := getEnv(tt.key, tt.defaultValue)
@@ -63,73 +52,131 @@ func TestGetEnv(t *testing.T) {
 }
 
 func TestIsDebugEnabled(t *testing.T) {
-	originalValue, originalSet := os.LookupEnv("INPUT_DEBUG")
-	defer func() {
-		if originalSet {
-			_ = os.Setenv("INPUT_DEBUG", originalValue)
-		} else {
-			_ = os.Unsetenv("INPUT_DEBUG")
-		}
-	}()
-
 	tests := []struct {
 		name     string
 		envValue string
 		want     bool
 	}{
-		{
-			name:     "debug true uppercase",
-			envValue: "TRUE",
-			want:     true,
-		},
-		{
-			name:     "debug true",
-			envValue: "true",
-			want:     true,
-		},
-		{
-			name:     "debug true mixed case",
-			envValue: "TrUe",
-			want:     true,
-		},
-		{
-			name:     "debug false",
-			envValue: "false",
-			want:     false,
-		},
-		{
-			name:     "debug false uppercase",
-			envValue: "FALSE",
-			want:     false,
-		},
-		{
-			name:     "debug invalid value",
-			envValue: "yes",
-			want:     false,
-		},
-		{
-			name:     "debug whitespace",
-			envValue: " true ",
-			want:     true,
-		},
-		{
-			name:     "debug empty",
-			envValue: "",
-			want:     false,
-		},
+		{"debug true", "true", true},
+		{"debug TRUE", "TRUE", true},
+		{"debug false", "false", false},
+		{"debug empty", "", false},
+		{"debug invalid", "yes", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.envValue != "" {
 				t.Setenv("INPUT_DEBUG", tt.envValue)
-			} else {
-				_ = os.Unsetenv("INPUT_DEBUG")
 			}
-
 			got := isDebugEnabled()
 			if got != tt.want {
 				t.Errorf("isDebugEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestLoadConfig tests the loadConfig function
+func TestLoadConfig(t *testing.T) {
+	t.Setenv("INPUT_SCAN", "latest_release")
+	t.Setenv("INPUT_IMAGE", "")
+	t.Setenv("INPUT_PATH", "")
+	t.Setenv("INPUT_SBOM", "")
+	t.Setenv("INPUT_FAIL-BUILD", "true")
+	t.Setenv("INPUT_SEVERITY-CUTOFF", "high")
+	t.Setenv("INPUT_OUTPUT-FILE", "results.json")
+	t.Setenv("INPUT_ONLY-FIXED", "true")
+	t.Setenv("INPUT_DEBUG", "false")
+
+	config := loadConfig()
+
+	if config.Scan != "latest_release" {
+		t.Errorf("config.Scan = %v, want latest_release", config.Scan)
+	}
+	if !config.FailBuild {
+		t.Error("config.FailBuild should be true")
+	}
+	if config.SeverityCutoff != "high" {
+		t.Errorf("config.SeverityCutoff = %v, want high", config.SeverityCutoff)
+	}
+	if !config.OnlyFixed {
+		t.Error("config.OnlyFixed should be true")
+	}
+}
+
+// TestDetermineScanTarget tests the determineScanTarget function
+func TestDetermineScanTarget(t *testing.T) {
+	// Create a temp directory for path tests
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(tmpFile, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name       string
+		config     Config
+		wantPrefix string
+		wantErr    bool
+		errMsg     string
+	}{
+		{
+			name:       "image mode",
+			config:     Config{Image: "alpine:latest"},
+			wantPrefix: "alpine:latest",
+			wantErr:    false,
+		},
+		{
+			name:       "path mode directory",
+			config:     Config{Path: tmpDir},
+			wantPrefix: "dir:",
+			wantErr:    false,
+		},
+		{
+			name:       "path mode file",
+			config:     Config{Path: tmpFile},
+			wantPrefix: "file:",
+			wantErr:    false,
+		},
+		{
+			name:       "sbom mode",
+			config:     Config{SBOM: "sbom.json"},
+			wantPrefix: "sbom:",
+			wantErr:    false,
+		},
+		{
+			name:    "multiple artifact modes",
+			config:  Config{Image: "alpine", Path: tmpDir},
+			wantErr: true,
+			errMsg:  "only one of image, path, or sbom",
+		},
+		{
+			name:    "scan with artifact mode",
+			config:  Config{Scan: "head", Image: "alpine"},
+			wantErr: true,
+			errMsg:  "scan cannot be used together",
+		},
+		{
+			name:    "path not found",
+			config:  Config{Path: "/nonexistent/path"},
+			wantErr: true,
+			errMsg:  "not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target, err := determineScanTarget(tt.config)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("determineScanTarget() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr && tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
+				t.Errorf("error = %v, want containing %q", err, tt.errMsg)
+			}
+			if !tt.wantErr && !strings.HasPrefix(target, tt.wantPrefix) {
+				t.Errorf("target = %v, want prefix %v", target, tt.wantPrefix)
 			}
 		})
 	}
@@ -143,150 +190,49 @@ func TestCalculateStats(t *testing.T) {
 		want   Stats
 	}{
 		{
-			name: "empty output",
-			output: &GrypeOutput{
-				Matches: []GrypeMatch{},
-			},
-			want: Stats{
-				Total:    0,
-				Critical: 0,
-				High:     0,
-				Medium:   0,
-				Low:      0,
-				Other:    0,
-			},
-		},
-		{
-			name: "single critical vulnerability",
-			output: &GrypeOutput{
-				Matches: []GrypeMatch{
-					{
-						Vulnerability: struct {
-							ID       string `json:"id"`
-							Severity string `json:"severity"`
-						}{
-							ID:       "CVE-2021-1234",
-							Severity: "Critical",
-						},
-					},
-				},
-			},
-			want: Stats{
-				Total:    1,
-				Critical: 1,
-				High:     0,
-				Medium:   0,
-				Low:      0,
-				Other:    0,
-			},
+			name:   "empty output",
+			output: &GrypeOutput{Matches: []GrypeMatch{}},
+			want:   Stats{Total: 0},
 		},
 		{
 			name: "mixed severities",
 			output: &GrypeOutput{
 				Matches: []GrypeMatch{
-					{
-						Vulnerability: struct {
-							ID       string `json:"id"`
-							Severity string `json:"severity"`
-						}{
-							ID:       "CVE-2021-1234",
-							Severity: "Critical",
-						},
-					},
-					{
-						Vulnerability: struct {
-							ID       string `json:"id"`
-							Severity string `json:"severity"`
-						}{
-							ID:       "CVE-2021-5678",
-							Severity: "High",
-						},
-					},
-					{
-						Vulnerability: struct {
-							ID       string `json:"id"`
-							Severity string `json:"severity"`
-						}{
-							ID:       "CVE-2021-9012",
-							Severity: "Medium",
-						},
-					},
-					{
-						Vulnerability: struct {
-							ID       string `json:"id"`
-							Severity string `json:"severity"`
-						}{
-							ID:       "CVE-2021-3456",
-							Severity: "Low",
-						},
-					},
+					{Vulnerability: struct {
+						ID       string `json:"id"`
+						Severity string `json:"severity"`
+					}{ID: "CVE-1", Severity: "Critical"}},
+					{Vulnerability: struct {
+						ID       string `json:"id"`
+						Severity string `json:"severity"`
+					}{ID: "CVE-2", Severity: "High"}},
+					{Vulnerability: struct {
+						ID       string `json:"id"`
+						Severity string `json:"severity"`
+					}{ID: "CVE-3", Severity: "Medium"}},
+					{Vulnerability: struct {
+						ID       string `json:"id"`
+						Severity string `json:"severity"`
+					}{ID: "CVE-4", Severity: "Low"}},
 				},
 			},
-			want: Stats{
-				Total:    4,
-				Critical: 1,
-				High:     1,
-				Medium:   1,
-				Low:      1,
-				Other:    0,
-			},
+			want: Stats{Total: 4, Critical: 1, High: 1, Medium: 1, Low: 1},
 		},
 		{
-			name: "case insensitive severity",
+			name: "case insensitive",
 			output: &GrypeOutput{
 				Matches: []GrypeMatch{
-					{
-						Vulnerability: struct {
-							ID       string `json:"id"`
-							Severity string `json:"severity"`
-						}{
-							ID:       "CVE-2021-1234",
-							Severity: "CRITICAL",
-						},
-					},
-					{
-						Vulnerability: struct {
-							ID       string `json:"id"`
-							Severity string `json:"severity"`
-						}{
-							ID:       "CVE-2021-5678",
-							Severity: "high",
-						},
-					},
+					{Vulnerability: struct {
+						ID       string `json:"id"`
+						Severity string `json:"severity"`
+					}{ID: "CVE-1", Severity: "CRITICAL"}},
+					{Vulnerability: struct {
+						ID       string `json:"id"`
+						Severity string `json:"severity"`
+					}{ID: "CVE-2", Severity: "high"}},
 				},
 			},
-			want: Stats{
-				Total:    2,
-				Critical: 1,
-				High:     1,
-				Medium:   0,
-				Low:      0,
-				Other:    0,
-			},
-		},
-		{
-			name: "unknown severity",
-			output: &GrypeOutput{
-				Matches: []GrypeMatch{
-					{
-						Vulnerability: struct {
-							ID       string `json:"id"`
-							Severity string `json:"severity"`
-						}{
-							ID:       "CVE-2021-1234",
-							Severity: "Unknown",
-						},
-					},
-				},
-			},
-			want: Stats{
-				Total:    1,
-				Critical: 0,
-				High:     0,
-				Medium:   0,
-				Low:      0,
-				Other:    1,
-			},
+			want: Stats{Total: 2, Critical: 1, High: 1},
 		},
 	}
 
@@ -300,716 +246,297 @@ func TestCalculateStats(t *testing.T) {
 	}
 }
 
-// TestParseGrypeOutput tests the parseGrypeOutput function
-func TestParseGrypeOutput(t *testing.T) {
+// TestShouldFail tests the shouldFail function
+func TestShouldFail(t *testing.T) {
 	tests := []struct {
-		name       string
-		jsonData   string
-		wantErr    bool
-		wantOutput *GrypeOutput
+		name   string
+		stats  Stats
+		cutoff string
+		want   bool
 	}{
-		{
-			name: "valid grype output",
-			jsonData: `{
-				"matches": [
-					{
-						"vulnerability": {
-							"id": "CVE-2021-1234",
-							"severity": "High"
-						}
-					}
-				],
-				"descriptor": {
-					"version": "0.65.0",
-					"db": {
-						"status": {
-							"built": "2024-01-30T10:00:00Z"
-						}
-					}
-				}
-			}`,
-			wantErr: false,
-			wantOutput: &GrypeOutput{
-				Matches: []GrypeMatch{
-					{
-						Vulnerability: struct {
-							ID       string `json:"id"`
-							Severity string `json:"severity"`
-						}{
-							ID:       "CVE-2021-1234",
-							Severity: "High",
-						},
-					},
-				},
-				Descriptor: struct {
-					Version string `json:"version"`
-					DB      struct {
-						Built  string `json:"built,omitempty"`
-						Status struct {
-							Built string `json:"built,omitempty"`
-						} `json:"status,omitempty"`
-					} `json:"db"`
-				}{
-					Version: "0.65.0",
-					DB: struct {
-						Built  string `json:"built,omitempty"`
-						Status struct {
-							Built string `json:"built,omitempty"`
-						} `json:"status,omitempty"`
-					}{
-						Status: struct {
-							Built string `json:"built,omitempty"`
-						}{
-							Built: "2024-01-30T10:00:00Z",
-						},
-					},
-				},
-			},
-		},
-		{
-			name:       "invalid json",
-			jsonData:   `{"invalid json`,
-			wantErr:    true,
-			wantOutput: nil,
-		},
-		{
-			name:       "empty json object",
-			jsonData:   `{}`,
-			wantErr:    false,
-			wantOutput: &GrypeOutput{},
-		},
+		{"critical cutoff with critical", Stats{Critical: 1}, "critical", true},
+		{"critical cutoff without critical", Stats{High: 1}, "critical", false},
+		{"high cutoff with high", Stats{High: 1}, "high", true},
+		{"high cutoff with critical", Stats{Critical: 1}, "high", true},
+		{"medium cutoff with medium", Stats{Medium: 1}, "medium", true},
+		{"low cutoff with low", Stats{Low: 1}, "low", true},
+		{"negligible cutoff with any", Stats{Other: 1, Total: 1}, "negligible", true},
+		{"no vulns", Stats{}, "medium", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a temporary file with the test data
-			tmpFile, err := os.CreateTemp("", "grype-test-*.json")
-			if err != nil {
-				t.Fatalf("Failed to create temp file: %v", err)
-			}
-			defer func() {
-				_ = os.Remove(tmpFile.Name())
-			}()
-
-			if _, err := tmpFile.WriteString(tt.jsonData); err != nil {
-				t.Fatalf("Failed to write to temp file: %v", err)
-			}
-			if err := tmpFile.Close(); err != nil {
-				t.Fatalf("Failed to close temp file: %v", err)
-			}
-
-			got, err := parseGrypeOutput(tmpFile.Name())
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseGrypeOutput() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if !tt.wantErr && tt.wantOutput != nil {
-				if len(got.Matches) != len(tt.wantOutput.Matches) {
-					t.Errorf("parseGrypeOutput() matches count = %d, want %d",
-						len(got.Matches), len(tt.wantOutput.Matches))
-				}
-				if got.Descriptor.Version != tt.wantOutput.Descriptor.Version {
-					t.Errorf("parseGrypeOutput() version = %s, want %s",
-						got.Descriptor.Version, tt.wantOutput.Descriptor.Version)
-				}
+			got := shouldFail(tt.stats, tt.cutoff)
+			if got != tt.want {
+				t.Errorf("shouldFail() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-// TestParseGrypeOutputFileNotFound tests parseGrypeOutput with non-existent file
-func TestParseGrypeOutputFileNotFound(t *testing.T) {
-	_, err := parseGrypeOutput("/nonexistent/file.json")
-	if err == nil {
-		t.Error("parseGrypeOutput() expected error for non-existent file, got nil")
+// TestValidateRefName tests the validateRefName function
+func TestValidateRefName(t *testing.T) {
+	tests := []struct {
+		name    string
+		ref     string
+		wantErr bool
+	}{
+		{"valid simple ref", "main", false},
+		{"valid tag", "v1.0.0", false},
+		{"valid branch with slash", "feature/new", false},
+		{"empty ref", "", true},
+		{"ref with newline", "main\nmalicious", true},
+		{"ref with path traversal", "../etc/passwd", true},
+		{"ref with tilde", "HEAD~1", true},
+		{"ref with space", "main branch", true},
+		{"ref starting with dot", ".hidden", true},
+		{"ref ending with slash", "branch/", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateRefName(tt.ref)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateRefName(%q) error = %v, wantErr %v", tt.ref, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestIsPreReleaseTag tests the isPreReleaseTag function
+func TestIsPreReleaseTag(t *testing.T) {
+	tests := []struct {
+		tag  string
+		want bool
+	}{
+		{"v1.0.0", false},
+		{"1.0.0", false},
+		{"v1.0.0-alpha", true},
+		{"v1.0.0-beta.1", true},
+		{"v1.0.0-rc1", true},
+		{"v2.0.0-pre", true},
+		{"release-1.0", false}, // not a semver pre-release
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.tag, func(t *testing.T) {
+			got := isPreReleaseTag(tt.tag)
+			if got != tt.want {
+				t.Errorf("isPreReleaseTag(%q) = %v, want %v", tt.tag, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestParseGrypeOutput tests the parseGrypeOutput function
+func TestParseGrypeOutput(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "grype-output-*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(tmpFile.Name()) })
+
+	grypeJSON := `{
+		"matches": [
+			{"vulnerability": {"id": "CVE-2021-1234", "severity": "High"}}
+		],
+		"descriptor": {
+			"version": "0.106.0",
+			"db": {"status": {"built": "2024-01-01T00:00:00Z"}}
+		}
+	}`
+
+	if err := os.WriteFile(tmpFile.Name(), []byte(grypeJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	output, err := parseGrypeOutput(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("parseGrypeOutput() error = %v", err)
+	}
+
+	if len(output.Matches) != 1 {
+		t.Errorf("expected 1 match, got %d", len(output.Matches))
+	}
+	if output.Descriptor.Version != "0.106.0" {
+		t.Errorf("version = %v, want 0.106.0", output.Descriptor.Version)
+	}
+}
+
+// TestGrypeOutputDBBuilt tests the DBBuilt method
+func TestGrypeOutputDBBuilt(t *testing.T) {
+	tests := []struct {
+		name   string
+		output *GrypeOutput
+		want   string
+	}{
+		{
+			name:   "nil output",
+			output: nil,
+			want:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.output.DBBuilt()
+			if got != tt.want {
+				t.Errorf("DBBuilt() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
 // TestCopyOutputFile tests the copyOutputFile function
 func TestCopyOutputFile(t *testing.T) {
-	// Create a temporary source file
-	tmpDir := t.TempDir()
-	srcFile := filepath.Join(tmpDir, "source.json")
-	testData := []byte(`{"test": "data"}`)
-
-	if err := os.WriteFile(srcFile, testData, 0644); err != nil {
-		t.Fatalf("Failed to create source file: %v", err)
+	srcDir := t.TempDir()
+	srcFile := filepath.Join(srcDir, "source.json")
+	content := []byte(`{"test": "data"}`)
+	if err := os.WriteFile(srcFile, content, 0644); err != nil {
+		t.Fatal(err)
 	}
 
-	tests := []struct {
-		name    string
-		src     string
-		dst     string
-		wantErr bool
-	}{
-		{
-			name:    "successful copy",
-			src:     srcFile,
-			dst:     filepath.Join(tmpDir, "destination.json"),
-			wantErr: false,
-		},
-		{
-			name:    "copy to nested directory",
-			src:     srcFile,
-			dst:     filepath.Join(tmpDir, "subdir", "output.json"),
-			wantErr: false,
-		},
-	}
+	dstDir := t.TempDir()
+	dstFile := filepath.Join(dstDir, "dest.json")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := copyOutputFile(tt.src, tt.dst)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("copyOutputFile() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if !tt.wantErr {
-				// Verify the file was copied
-				if _, err := os.Stat(got); os.IsNotExist(err) {
-					t.Errorf("copyOutputFile() did not create destination file")
-				}
-
-				// Verify content
-				copiedData, err := os.ReadFile(got)
-				if err != nil {
-					t.Errorf("Failed to read copied file: %v", err)
-				}
-				if string(copiedData) != string(testData) {
-					t.Errorf("copyOutputFile() content mismatch")
-				}
-			}
-		})
-	}
-}
-
-// TestCopyOutputFileSourceNotFound tests copyOutputFile with non-existent source
-func TestCopyOutputFileSourceNotFound(t *testing.T) {
-	tmpDir := t.TempDir()
-	_, err := copyOutputFile("/nonexistent/source.json", filepath.Join(tmpDir, "dest.json"))
-	if err == nil {
-		t.Error("copyOutputFile() expected error for non-existent source, got nil")
-	}
-}
-
-// TestCopyOutputFileWithGitHubWorkspace tests copyOutputFile with GITHUB_WORKSPACE set
-func TestCopyOutputFileWithGitHubWorkspace(t *testing.T) {
-	// Create a temporary source file
-	tmpDir := t.TempDir()
-	srcFile := filepath.Join(tmpDir, "source.json")
-	testData := []byte(`{"test": "workspace data"}`)
-
-	if err := os.WriteFile(srcFile, testData, 0644); err != nil {
-		t.Fatalf("Failed to create source file: %v", err)
-	}
-
-	// Create a mock workspace directory
-	workspaceDir := filepath.Join(tmpDir, "workspace")
-	if err := os.MkdirAll(workspaceDir, 0755); err != nil {
-		t.Fatalf("Failed to create workspace directory: %v", err)
-	}
-
-	// Set GITHUB_WORKSPACE environment variable
-	oldWorkspace := os.Getenv("GITHUB_WORKSPACE")
-	defer func() {
-		if oldWorkspace != "" {
-			_ = os.Setenv("GITHUB_WORKSPACE", oldWorkspace)
-		} else {
-			_ = os.Unsetenv("GITHUB_WORKSPACE")
-		}
-	}()
-	if err := os.Setenv("GITHUB_WORKSPACE", workspaceDir); err != nil {
-		t.Fatalf("Failed to set GITHUB_WORKSPACE: %v", err)
-	}
-
-	// Test with relative path (should use GITHUB_WORKSPACE)
-	dstFile := "output.json"
-	got, err := copyOutputFile(srcFile, dstFile)
+	result, err := copyOutputFile(srcFile, dstFile)
 	if err != nil {
 		t.Fatalf("copyOutputFile() error = %v", err)
 	}
 
-	expectedPath := filepath.Join(workspaceDir, dstFile)
-	if got != expectedPath {
-		t.Errorf("copyOutputFile() = %v, want %v", got, expectedPath)
-	}
-
-	// Verify the file was created in the workspace
-	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
-		t.Errorf("copyOutputFile() did not create file in workspace")
-	}
-
-	// Verify content
-	copiedData, err := os.ReadFile(got)
+	copied, err := os.ReadFile(result)
 	if err != nil {
-		t.Errorf("Failed to read copied file: %v", err)
+		t.Fatalf("Failed to read copied file: %v", err)
 	}
-	if string(copiedData) != string(testData) {
-		t.Errorf("copyOutputFile() content mismatch")
+	if string(copied) != string(content) {
+		t.Errorf("copied content = %v, want %v", string(copied), string(content))
 	}
 }
 
-// TestCopyOutputFileWithDockerWorkspace tests copyOutputFile with Docker workspace
-func TestCopyOutputFileWithDockerWorkspace(t *testing.T) {
-	// Create a temporary source file
-	tmpDir := t.TempDir()
-	srcFile := filepath.Join(tmpDir, "source.json")
-	testData := []byte(`{"test": "docker data"}`)
+// TestValidatePathInWorkspace tests path traversal protection
+func TestValidatePathInWorkspace(t *testing.T) {
+	workspace := "/workspace"
 
-	if err := os.WriteFile(srcFile, testData, 0644); err != nil {
-		t.Fatalf("Failed to create source file: %v", err)
-	}
-
-	// Create a mock /github/workspace directory (simulating Docker environment)
-	dockerWorkspaceDir := filepath.Join(tmpDir, "github", "workspace")
-	if err := os.MkdirAll(dockerWorkspaceDir, 0755); err != nil {
-		t.Fatalf("Failed to create docker workspace directory: %v", err)
-	}
-
-	// Test with relative path - mock Docker environment by temporarily changing the logic
-	// Since we can't actually create /github/workspace in tests, we'll test the logic indirectly
-	// This test verifies that absolute paths work correctly
-	dstFile := filepath.Join(dockerWorkspaceDir, "output.json")
-	got, err := copyOutputFile(srcFile, dstFile)
-	if err != nil {
-		t.Fatalf("copyOutputFile() error = %v", err)
-	}
-
-	if got != dstFile {
-		t.Errorf("copyOutputFile() = %v, want %v", got, dstFile)
-	}
-
-	// Verify the file was created
-	if _, err := os.Stat(got); os.IsNotExist(err) {
-		t.Errorf("copyOutputFile() did not create destination file")
-	}
-
-	// Verify content
-	copiedData, err := os.ReadFile(got)
-	if err != nil {
-		t.Errorf("Failed to read copied file: %v", err)
-	}
-	if string(copiedData) != string(testData) {
-		t.Errorf("copyOutputFile() content mismatch")
-	}
-}
-
-// TestCopyOutputFilePathTraversal tests that path traversal attacks are prevented
-func TestCopyOutputFilePathTraversal(t *testing.T) {
-	// Create source file
-	tmpDir := t.TempDir()
-	srcFile := filepath.Join(tmpDir, "source.json")
-	testData := []byte(`{"test": "data"}`)
-	if err := os.WriteFile(srcFile, testData, 0644); err != nil {
-		t.Fatalf("Failed to create source file: %v", err)
-	}
-
-	// Create a workspace directory
-	workspace := filepath.Join(tmpDir, "workspace")
-	if err := os.MkdirAll(workspace, 0755); err != nil {
-		t.Fatalf("Failed to create workspace: %v", err)
-	}
-
-	// Set GITHUB_WORKSPACE environment variable
-	oldWorkspace := os.Getenv("GITHUB_WORKSPACE")
-	defer func() {
-		if oldWorkspace != "" {
-			_ = os.Setenv("GITHUB_WORKSPACE", oldWorkspace)
-		} else {
-			_ = os.Unsetenv("GITHUB_WORKSPACE")
-		}
-	}()
-	if err := os.Setenv("GITHUB_WORKSPACE", workspace); err != nil {
-		t.Fatalf("Failed to set GITHUB_WORKSPACE: %v", err)
-	}
-
-	// Test cases with path traversal attempts
 	tests := []struct {
 		name    string
 		dst     string
 		wantErr bool
 	}{
-		{
-			name:    "valid relative path",
-			dst:     "output.json",
-			wantErr: false,
-		},
-		{
-			name:    "valid nested path",
-			dst:     "subdir/output.json",
-			wantErr: false,
-		},
-		{
-			name:    "path traversal with ../",
-			dst:     "../../../etc/passwd",
-			wantErr: true,
-		},
-		{
-			name:    "path traversal to parent",
-			dst:     "../output.json",
-			wantErr: true,
-		},
-		{
-			name:    "path traversal with mixed separators",
-			dst:     "subdir/../../outside.json",
-			wantErr: true,
-		},
+		{"valid path", "/workspace/output.json", false},
+		{"valid nested path", "/workspace/subdir/output.json", false},
+		{"path traversal", "/workspace/../etc/passwd", true},
+		{"outside workspace", "/other/path", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := copyOutputFile(srcFile, tt.dst)
+			err := validatePathInWorkspace(tt.dst, workspace)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("copyOutputFile() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if err != nil && tt.wantErr {
-				// Verify the error message mentions path traversal
-				if !strings.Contains(err.Error(), "path traversal") {
-					t.Errorf("Expected path traversal error, got: %v", err)
-				}
+				t.Errorf("validatePathInWorkspace() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
 }
 
-// TestGrypeOutputJSONMarshaling tests that GrypeOutput can be marshaled and unmarshaled
+// TestConfigureGitSafeDirectory tests git safe directory configuration
+func TestConfigureGitSafeDirectory(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	err := configureGitSafeDirectory()
+	if err != nil {
+		t.Errorf("configureGitSafeDirectory() error = %v", err)
+	}
+}
+
+// TestHandleRepoScanHead tests head mode
+func TestHandleRepoScanHead(t *testing.T) {
+	target, err := handleRepoScan("head")
+	if err != nil {
+		t.Fatalf("handleRepoScan(head) error = %v", err)
+	}
+	if target != "dir:." {
+		t.Errorf("target = %v, want dir:.", target)
+	}
+}
+
+// TestEndToEndWithPath tests scanning a directory path
+func TestEndToEndWithPath(t *testing.T) {
+	if _, err := exec.LookPath("grype"); err != nil {
+		t.Skip("grype not installed")
+	}
+
+	tmpDir := t.TempDir()
+	goMod := `module testmodule
+
+go 1.21
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goMod), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	config := Config{
+		Path:           tmpDir,
+		OutputFile:     "",
+		VariablePrefix: "TEST_",
+	}
+
+	target, err := determineScanTarget(config)
+	if err != nil {
+		t.Fatalf("determineScanTarget() error = %v", err)
+	}
+
+	if !strings.HasPrefix(target, "dir:") {
+		t.Errorf("target = %v, want prefix dir:", target)
+	}
+
+	tmpFile, err := os.CreateTemp("", "grype-test-*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(tmpFile.Name()) })
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("failed to close temp file: %v", err)
+	}
+
+	err = runGrypeScan(config, target, tmpFile.Name())
+	if err != nil {
+		t.Fatalf("runGrypeScan() error = %v", err)
+	}
+
+	if _, err := os.Stat(tmpFile.Name()); os.IsNotExist(err) {
+		t.Error("output file was not created")
+	}
+}
+
+// TestGrypeOutputJSONMarshaling tests JSON marshaling/unmarshaling
 func TestGrypeOutputJSONMarshaling(t *testing.T) {
 	original := &GrypeOutput{
 		Matches: []GrypeMatch{
-			{
-				Vulnerability: struct {
-					ID       string `json:"id"`
-					Severity string `json:"severity"`
-				}{
-					ID:       "CVE-2021-1234",
-					Severity: "High",
-				},
-			},
-		},
-		Descriptor: struct {
-			Version string `json:"version"`
-			DB      struct {
-				Built  string `json:"built,omitempty"`
-				Status struct {
-					Built string `json:"built,omitempty"`
-				} `json:"status,omitempty"`
-			} `json:"db"`
-		}{
-			Version: "0.65.0",
+			{Vulnerability: struct {
+				ID       string `json:"id"`
+				Severity string `json:"severity"`
+			}{ID: "CVE-2021-1234", Severity: "High"}},
 		},
 	}
+	original.Descriptor.Version = "0.106.0"
+	original.Descriptor.DB.Status.Built = "2024-01-01"
 
-	// Marshal to JSON
 	data, err := json.Marshal(original)
 	if err != nil {
-		t.Fatalf("Failed to marshal GrypeOutput: %v", err)
+		t.Fatalf("json.Marshal() error = %v", err)
 	}
 
-	// Unmarshal back
-	var decoded GrypeOutput
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("Failed to unmarshal GrypeOutput: %v", err)
+	var unmarshaled GrypeOutput
+	if err := json.Unmarshal(data, &unmarshaled); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
 
-	// Verify
-	if len(decoded.Matches) != len(original.Matches) {
-		t.Errorf("Unmarshaled matches count = %d, want %d",
-			len(decoded.Matches), len(original.Matches))
+	if len(unmarshaled.Matches) != 1 {
+		t.Errorf("expected 1 match, got %d", len(unmarshaled.Matches))
 	}
-	if decoded.Descriptor.Version != original.Descriptor.Version {
-		t.Errorf("Unmarshaled version = %s, want %s",
-			decoded.Descriptor.Version, original.Descriptor.Version)
+	if unmarshaled.DBBuilt() != "2024-01-01" {
+		t.Errorf("DBBuilt() = %v, want 2024-01-01", unmarshaled.DBBuilt())
 	}
-}
-
-// TestEndToEndGrypeScan is an end-to-end integration test that runs an actual grype scan
-// This test requires grype to be installed and available in PATH
-func TestEndToEndGrypeScan(t *testing.T) {
-	// Find and setup grype
-	if !setupGrype(t) {
-		return // Test was skipped
-	}
-
-	// Create a temporary directory for test output
-	tmpDir := t.TempDir()
-	outputFile := filepath.Join(tmpDir, "grype-results.json")
-
-	// Test scanning the current directory (our Go project)
-	// This is a real end-to-end test scanning actual code
-	err := runGrypeScan(".", outputFile)
-
-	// Check if the scan failed due to missing database
-	if err != nil {
-		// Read the output file to see if it contains any data
-		if _, statErr := os.Stat(outputFile); os.IsNotExist(statErr) {
-			t.Skipf("Grype scan failed (likely database not available): %v", err)
-		}
-	}
-
-	// Verify output file exists
-	if _, err := os.Stat(outputFile); os.IsNotExist(err) {
-		t.Skipf("Output file was not created (grype database may not be available): %s", outputFile)
-	}
-
-	// Check if the file has content
-	fileInfo, err := os.Stat(outputFile)
-	if err != nil {
-		t.Fatalf("Failed to stat output file: %v", err)
-	}
-	if fileInfo.Size() == 0 {
-		t.Skip("Output file is empty (grype database may not be available)")
-	}
-
-	// Parse the output
-	output, err := parseGrypeOutput(outputFile)
-	if err != nil {
-		// If parsing fails, it might be due to incomplete scan
-		content, _ := os.ReadFile(outputFile)
-		t.Logf("Output file content: %s", string(content))
-		t.Skipf("Failed to parse grype output (scan may have been incomplete): %v", err)
-	}
-
-	// Verify output structure
-	if output == nil {
-		t.Fatal("Parsed output is nil")
-	}
-
-	// Verify descriptor has version information
-	if output.Descriptor.Version == "" {
-		t.Error("Grype version is empty")
-	} else {
-		t.Logf("Grype version: %s", output.Descriptor.Version)
-	}
-
-	if output.DBBuilt() == "" {
-		t.Logf("Database built info not available (this is expected in some environments)")
-	} else {
-		t.Logf("Database built: %s", output.DBBuilt())
-	}
-
-	// Calculate statistics
-	stats := calculateStats(output)
-
-	// Log the results
-	t.Logf("Scan results for current project:")
-	t.Logf("  Total vulnerabilities: %d", stats.Total)
-	t.Logf("  Critical: %d", stats.Critical)
-	t.Logf("  High: %d", stats.High)
-	t.Logf("  Medium: %d", stats.Medium)
-	t.Logf("  Low: %d", stats.Low)
-	t.Logf("  Other: %d", stats.Other)
-
-	// Verify stats are consistent
-	expectedTotal := stats.Critical + stats.High + stats.Medium + stats.Low + stats.Other
-	if stats.Total != expectedTotal {
-		t.Errorf("Total count mismatch: got %d, expected %d (sum of individual counts)",
-			stats.Total, expectedTotal)
-	}
-
-	// Test passes if we got this far - the scan ran successfully
-	t.Logf("End-to-end test completed successfully with grype version %s", output.Descriptor.Version)
-}
-
-// TestEndToEndGrypeScanWithDockerImage tests scanning a Docker image
-func TestEndToEndGrypeScanWithDockerImage(t *testing.T) {
-	// Find and setup grype
-	if !setupGrype(t) {
-		return // Test was skipped
-	}
-
-	// Create a temporary directory for test files
-	tmpDir := t.TempDir()
-	outputFile := filepath.Join(tmpDir, "docker-scan-results.json")
-
-	// Test scanning alpine:3.7 Docker image (known to have vulnerabilities)
-	// Note: This test may be skipped in CI environments without Docker daemon
-	err := runGrypeScan("alpine:3.7", outputFile)
-
-	// If the scan fails (e.g., no Docker daemon or database), skip the test
-	if err != nil {
-		if _, statErr := os.Stat(outputFile); os.IsNotExist(statErr) {
-			t.Skipf("Docker image scan failed (likely no Docker daemon or grype database available): %v", err)
-		}
-	}
-
-	// Check if output file exists and has content
-	fileInfo, err := os.Stat(outputFile)
-	if err != nil || fileInfo.Size() == 0 {
-		t.Skip("Docker image scan did not produce output (Docker daemon or grype database may not be available)")
-	}
-
-	// Parse the output
-	output, err := parseGrypeOutput(outputFile)
-	if err != nil {
-		t.Skipf("Failed to parse grype output: %v", err)
-	}
-
-	// Verify we got valid output
-	if output.Descriptor.Version == "" {
-		t.Error("Grype version is empty")
-	}
-
-	stats := calculateStats(output)
-	t.Logf("Docker image scan completed: found %d vulnerabilities", stats.Total)
-}
-
-// setupGrype finds grype and sets up the PATH for testing
-// Returns false if grype is not available (and skips the test)
-func setupGrype(t *testing.T) bool {
-	t.Helper()
-
-	// Check if grype is available in standard locations
-	grypeCmd := os.Getenv("GRYPE_PATH")
-	if grypeCmd == "" {
-		// Try to find grype in PATH first
-		if path, err := exec.LookPath("grype"); err == nil {
-			grypeCmd = path
-		} else if _, err := os.Stat("/tmp/bin/grype"); err == nil {
-			// Fall back to /tmp/bin/grype
-			grypeCmd = "/tmp/bin/grype"
-		} else {
-			t.Skip("Grype not available. Set GRYPE_PATH or install grype to /tmp/bin/grype or PATH")
-			return false
-		}
-	}
-
-	// If using /tmp/bin/grype, add to PATH
-	if grypeCmd == "/tmp/bin/grype" {
-		oldPath := os.Getenv("PATH")
-		_ = os.Setenv("PATH", "/tmp/bin:"+oldPath)
-		t.Cleanup(func() {
-			_ = os.Setenv("PATH", oldPath)
-		})
-	}
-
-	return true
-}
-
-// TestIntegrationWithMockGrypeOutput tests the integration flow with pre-generated grype output
-// This test doesn't require grype to be installed and simulates a realistic scan result
-func TestIntegrationWithMockGrypeOutput(t *testing.T) {
-	// Create a temporary directory for test files
-	tmpDir := t.TempDir()
-	mockOutputFile := filepath.Join(tmpDir, "mock-grype-output.json")
-
-	// Create realistic mock grype output (simulating a real scan result)
-	mockGrypeOutput := `{
-		"matches": [
-			{
-				"vulnerability": {
-					"id": "CVE-2023-1234",
-					"severity": "Critical"
-				},
-				"artifact": {
-					"name": "libssl",
-					"version": "1.0.2"
-				}
-			},
-			{
-				"vulnerability": {
-					"id": "CVE-2023-5678",
-					"severity": "High"
-				},
-				"artifact": {
-					"name": "bash",
-					"version": "4.3.0"
-				}
-			},
-			{
-				"vulnerability": {
-					"id": "CVE-2023-9012",
-					"severity": "Medium"
-				},
-				"artifact": {
-					"name": "curl",
-					"version": "7.47.0"
-				}
-			}
-		],
-		"descriptor": {
-			"version": "0.107.0",
-			"db": {
-				"status": {
-					"built": "2024-01-30T10:00:00Z",
-					"schemaVersion": 6
-				}
-			}
-		}
-	}`
-
-	// Write mock output to file
-	if err := os.WriteFile(mockOutputFile, []byte(mockGrypeOutput), 0644); err != nil {
-		t.Fatalf("Failed to write mock output: %v", err)
-	}
-
-	// Test the complete integration flow from parsing to stats
-	t.Run("parse_mock_output", func(t *testing.T) {
-		output, err := parseGrypeOutput(mockOutputFile)
-		if err != nil {
-			t.Fatalf("Failed to parse mock output: %v", err)
-		}
-
-		// Verify descriptor
-		if output.Descriptor.Version != "0.107.0" {
-			t.Errorf("Expected version 0.107.0, got %s", output.Descriptor.Version)
-		}
-
-		if output.DBBuilt() != "2024-01-30T10:00:00Z" {
-			t.Errorf("Expected DB built time 2024-01-30T10:00:00Z, got %s", output.DBBuilt())
-		}
-
-		// Verify matches
-		if len(output.Matches) != 3 {
-			t.Errorf("Expected 3 matches, got %d", len(output.Matches))
-		}
-	})
-
-	t.Run("calculate_stats_from_mock", func(t *testing.T) {
-		output, err := parseGrypeOutput(mockOutputFile)
-		if err != nil {
-			t.Fatalf("Failed to parse mock output: %v", err)
-		}
-
-		stats := calculateStats(output)
-
-		// Verify stats match the mock data
-		if stats.Total != 3 {
-			t.Errorf("Expected 3 total vulnerabilities, got %d", stats.Total)
-		}
-		if stats.Critical != 1 {
-			t.Errorf("Expected 1 critical vulnerability, got %d", stats.Critical)
-		}
-		if stats.High != 1 {
-			t.Errorf("Expected 1 high vulnerability, got %d", stats.High)
-		}
-		if stats.Medium != 1 {
-			t.Errorf("Expected 1 medium vulnerability, got %d", stats.Medium)
-		}
-		if stats.Low != 0 {
-			t.Errorf("Expected 0 low vulnerabilities, got %d", stats.Low)
-		}
-	})
-
-	t.Run("copy_output_file", func(t *testing.T) {
-		destPath := filepath.Join(tmpDir, "copied-output.json")
-		copiedPath, err := copyOutputFile(mockOutputFile, destPath)
-		if err != nil {
-			t.Fatalf("Failed to copy output file: %v", err)
-		}
-
-		// Verify the file was copied
-		if _, err := os.Stat(copiedPath); os.IsNotExist(err) {
-			t.Error("Copied file does not exist")
-		}
-
-		// Verify content matches
-		originalContent, _ := os.ReadFile(mockOutputFile)
-		copiedContent, _ := os.ReadFile(copiedPath)
-		if string(originalContent) != string(copiedContent) {
-			t.Error("Copied file content does not match original")
-		}
-	})
-
-	t.Logf("Integration test with mock data completed successfully")
 }

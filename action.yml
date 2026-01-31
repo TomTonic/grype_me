@@ -6,24 +6,69 @@ branding:
   color: 'blue'
 
 inputs:
-  repository:
-    description: 'Repository to scan (optional, defaults to current repository)'
-    required: false
-    default: '.'
-  branch:
-    description: 'Branch to scan (optional, defaults to current branch)'
+  # === Repository-based scanning (scan git refs) ===
+  scan:
+    description: >-
+      Scan a git ref in the repository. Mutually exclusive with image/path/sbom.
+      - 'latest_release': (default) Scan the highest stable semver tag.
+        Pre-release tags (e.g., v1.0.0-beta) are skipped. Ideal for nightly
+        vulnerability scans of your latest published release.
+      - 'head': Scan the current working directory as checked out (no git
+        operations). Use this for PR checks or when you control the checkout.
+      - A tag/branch name: Scan a specific git ref.
+      Note: For latest_release, tags are sorted by semantic version, not date.
     required: false
     default: ''
+
+  # === Artifact-based scanning (mutually exclusive with 'scan') ===
+  image:
+    description: >-
+      Container image to scan (e.g., 'myapp:latest', 'ghcr.io/org/app:v1').
+      The image must be available locally (pulled or built) or in a registry.
+      Mutually exclusive with scan/path/sbom.
+    required: false
+    default: ''
+  path:
+    description: >-
+      Directory or file path to scan (e.g., '.', './dist', './target/app.jar').
+      Grype auto-detects the content type (go.mod, package.json, JAR, etc.).
+      Mutually exclusive with scan/image/sbom.
+    required: false
+    default: ''
+  sbom:
+    description: >-
+      SBOM file to scan (Syft JSON, SPDX, or CycloneDX format).
+      Generate with 'syft' or 'anchore/sbom-action' first.
+      Mutually exclusive with scan/image/path.
+    required: false
+    default: ''
+
+  # === Common options ===
+  fail-build:
+    description: >-
+      Fail the action if vulnerabilities are found at or above severity-cutoff.
+    required: false
+    default: 'false'
+  severity-cutoff:
+    description: >-
+      Minimum severity to trigger a failure when fail-build is true.
+      One of: negligible, low, medium, high, critical.
+    required: false
+    default: 'medium'
   output-file:
     description: 'Path to save JSON scan results (optional)'
     required: false
     default: ''
   variable-prefix:
     description: >-
-      Prefix for environment variable names
-      (optional, defaults to "GRYPE_")
+      Prefix for environment variable names (default: "GRYPE_")
     required: false
     default: 'GRYPE_'
+  only-fixed:
+    description: >-
+      Only report vulnerabilities that have a fix available.
+    required: false
+    default: 'false'
   debug:
     description: >-
       Enable debug output (prints environment variables when true).
