@@ -52,6 +52,48 @@ func checkoutTestDefaultBranchInDir(t *testing.T, dir string) string {
 	return ""
 }
 
+// TestConfigureGitSafeDirectory tests the configureGitSafeDirectory function
+func TestConfigureGitSafeDirectory(t *testing.T) {
+	// Skip if git is not available
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available, skipping test")
+	}
+
+	// Create a temporary git repository for testing
+	tmpDir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+
+	// Save original directory and change to temp dir
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change to temp directory: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(origDir)
+	}()
+
+	// Test that configureGitSafeDirectory doesn't return an error
+	err = configureGitSafeDirectory()
+	if err != nil {
+		t.Errorf("configureGitSafeDirectory() returned error: %v", err)
+	}
+
+	// Verify that we can run git commands after configuration
+	cmd = exec.Command("git", "rev-parse", "--git-dir")
+	if err := cmd.Run(); err != nil {
+		t.Errorf("git rev-parse failed after configureGitSafeDirectory: %v", err)
+	}
+}
+
 // TestValidateRefName tests the validateRefName function
 func TestValidateRefName(t *testing.T) {
 	tests := []struct {
