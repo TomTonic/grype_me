@@ -187,12 +187,12 @@ func TestCalculateStats(t *testing.T) {
 	tests := []struct {
 		name   string
 		output *GrypeOutput
-		want   Stats
+		want   VulnerabilityStats
 	}{
 		{
 			name:   "empty output",
 			output: &GrypeOutput{Matches: []GrypeMatch{}},
-			want:   Stats{Total: 0},
+			want:   VulnerabilityStats{Total: 0},
 		},
 		{
 			name: "mixed severities",
@@ -216,7 +216,7 @@ func TestCalculateStats(t *testing.T) {
 					}{ID: "CVE-4", Severity: "Low"}},
 				},
 			},
-			want: Stats{Total: 4, Critical: 1, High: 1, Medium: 1, Low: 1},
+			want: VulnerabilityStats{Total: 4, Critical: 1, High: 1, Medium: 1, Low: 1},
 		},
 		{
 			name: "case insensitive",
@@ -232,7 +232,7 @@ func TestCalculateStats(t *testing.T) {
 					}{ID: "CVE-2", Severity: "high"}},
 				},
 			},
-			want: Stats{Total: 2, Critical: 1, High: 1},
+			want: VulnerabilityStats{Total: 2, Critical: 1, High: 1},
 		},
 	}
 
@@ -250,18 +250,18 @@ func TestCalculateStats(t *testing.T) {
 func TestShouldFail(t *testing.T) {
 	tests := []struct {
 		name   string
-		stats  Stats
+		stats  VulnerabilityStats
 		cutoff string
 		want   bool
 	}{
-		{"critical cutoff with critical", Stats{Critical: 1}, "critical", true},
-		{"critical cutoff without critical", Stats{High: 1}, "critical", false},
-		{"high cutoff with high", Stats{High: 1}, "high", true},
-		{"high cutoff with critical", Stats{Critical: 1}, "high", true},
-		{"medium cutoff with medium", Stats{Medium: 1}, "medium", true},
-		{"low cutoff with low", Stats{Low: 1}, "low", true},
-		{"negligible cutoff with any", Stats{Other: 1, Total: 1}, "negligible", true},
-		{"no vulns", Stats{}, "medium", false},
+		{"critical cutoff with critical", VulnerabilityStats{Critical: 1}, "critical", true},
+		{"critical cutoff without critical", VulnerabilityStats{High: 1}, "critical", false},
+		{"high cutoff with high", VulnerabilityStats{High: 1}, "high", true},
+		{"high cutoff with critical", VulnerabilityStats{Critical: 1}, "high", true},
+		{"medium cutoff with medium", VulnerabilityStats{Medium: 1}, "medium", true},
+		{"low cutoff with low", VulnerabilityStats{Low: 1}, "low", true},
+		{"negligible cutoff with any", VulnerabilityStats{Other: 1, Total: 1}, "negligible", true},
+		{"no vulns", VulnerabilityStats{}, "medium", false},
 	}
 
 	for _, tt := range tests {
@@ -548,14 +548,14 @@ func TestGrypeOutputJSONMarshaling(t *testing.T) {
 func TestGenerateBadgeURL(t *testing.T) {
 	tests := []struct {
 		name     string
-		stats    Stats
+		stats    VulnerabilityStats
 		label    string
 		dbBuilt  string
 		contains []string
 	}{
 		{
 			name:    "no vulnerabilities with DB date",
-			stats:   Stats{Total: 0},
+			stats:   VulnerabilityStats{Total: 0},
 			label:   "grype scan release",
 			dbBuilt: "2026-01-30T12:34:56Z",
 			contains: []string{
@@ -568,7 +568,7 @@ func TestGenerateBadgeURL(t *testing.T) {
 		},
 		{
 			name:    "critical vulnerabilities with DB date",
-			stats:   Stats{Total: 2, Critical: 2},
+			stats:   VulnerabilityStats{Total: 2, Critical: 2},
 			label:   "grype scan image",
 			dbBuilt: "2026-01-30",
 			contains: []string{
@@ -579,7 +579,7 @@ func TestGenerateBadgeURL(t *testing.T) {
 		},
 		{
 			name:    "high vulnerabilities",
-			stats:   Stats{Total: 3, High: 3},
+			stats:   VulnerabilityStats{Total: 3, High: 3},
 			label:   "security",
 			dbBuilt: "2026-01-30",
 			contains: []string{
@@ -591,7 +591,7 @@ func TestGenerateBadgeURL(t *testing.T) {
 		},
 		{
 			name:    "medium vulnerabilities",
-			stats:   Stats{Total: 5, Medium: 5},
+			stats:   VulnerabilityStats{Total: 5, Medium: 5},
 			label:   "CVEs",
 			dbBuilt: "",
 			contains: []string{
@@ -603,7 +603,7 @@ func TestGenerateBadgeURL(t *testing.T) {
 		},
 		{
 			name:    "low vulnerabilities",
-			stats:   Stats{Total: 10, Low: 10},
+			stats:   VulnerabilityStats{Total: 10, Low: 10},
 			label:   "scan results",
 			dbBuilt: "2026-01-30",
 			contains: []string{
@@ -614,7 +614,7 @@ func TestGenerateBadgeURL(t *testing.T) {
 		},
 		{
 			name:    "mixed vulnerabilities",
-			stats:   Stats{Total: 10, Critical: 1, High: 2, Medium: 3, Low: 4},
+			stats:   VulnerabilityStats{Total: 10, Critical: 1, High: 2, Medium: 3, Low: 4},
 			label:   "vulnerabilities",
 			dbBuilt: "2026-01-30",
 			contains: []string{
@@ -624,7 +624,7 @@ func TestGenerateBadgeURL(t *testing.T) {
 		},
 		{
 			name:    "no DB date",
-			stats:   Stats{Total: 0},
+			stats:   VulnerabilityStats{Total: 0},
 			label:   "grype scan head",
 			dbBuilt: "",
 			contains: []string{
@@ -651,37 +651,37 @@ func TestGenerateBadgeURL(t *testing.T) {
 func TestFormatBadgeMessage(t *testing.T) {
 	tests := []struct {
 		name  string
-		stats Stats
+		stats VulnerabilityStats
 		want  string
 	}{
 		{
 			name:  "no vulnerabilities",
-			stats: Stats{Total: 0},
+			stats: VulnerabilityStats{Total: 0},
 			want:  "none",
 		},
 		{
 			name:  "only critical",
-			stats: Stats{Total: 2, Critical: 2},
+			stats: VulnerabilityStats{Total: 2, Critical: 2},
 			want:  "2 critical",
 		},
 		{
 			name:  "only high",
-			stats: Stats{Total: 3, High: 3},
+			stats: VulnerabilityStats{Total: 3, High: 3},
 			want:  "3 high",
 		},
 		{
 			name:  "critical and high",
-			stats: Stats{Total: 5, Critical: 2, High: 3},
+			stats: VulnerabilityStats{Total: 5, Critical: 2, High: 3},
 			want:  "2 critical | 3 high",
 		},
 		{
 			name:  "all severities",
-			stats: Stats{Total: 10, Critical: 1, High: 2, Medium: 3, Low: 4},
+			stats: VulnerabilityStats{Total: 10, Critical: 1, High: 2, Medium: 3, Low: 4},
 			want:  "1 critical | 2 high | 3 medium | 4 low",
 		},
 		{
 			name:  "only other",
-			stats: Stats{Total: 5, Other: 5},
+			stats: VulnerabilityStats{Total: 5, Other: 5},
 			want:  "5 other",
 		},
 	}
@@ -700,47 +700,47 @@ func TestFormatBadgeMessage(t *testing.T) {
 func TestDetermineBadgeColor(t *testing.T) {
 	tests := []struct {
 		name  string
-		stats Stats
+		stats VulnerabilityStats
 		want  string
 	}{
 		{
 			name:  "no vulnerabilities",
-			stats: Stats{Total: 0},
+			stats: VulnerabilityStats{Total: 0},
 			want:  "brightgreen",
 		},
 		{
 			name:  "critical",
-			stats: Stats{Critical: 1},
+			stats: VulnerabilityStats{Critical: 1},
 			want:  "critical",
 		},
 		{
 			name:  "high",
-			stats: Stats{High: 1},
+			stats: VulnerabilityStats{High: 1},
 			want:  "orange",
 		},
 		{
 			name:  "medium",
-			stats: Stats{Medium: 1},
+			stats: VulnerabilityStats{Medium: 1},
 			want:  "yellow",
 		},
 		{
 			name:  "low",
-			stats: Stats{Low: 1},
+			stats: VulnerabilityStats{Low: 1},
 			want:  "yellowgreen",
 		},
 		{
 			name:  "other",
-			stats: Stats{Other: 1},
+			stats: VulnerabilityStats{Other: 1},
 			want:  "yellowgreen",
 		},
 		{
 			name:  "critical takes precedence",
-			stats: Stats{Critical: 1, High: 2, Medium: 3, Low: 4},
+			stats: VulnerabilityStats{Critical: 1, High: 2, Medium: 3, Low: 4},
 			want:  "critical",
 		},
 		{
 			name:  "high takes precedence over medium",
-			stats: Stats{High: 1, Medium: 2, Low: 3},
+			stats: VulnerabilityStats{High: 1, Medium: 2, Low: 3},
 			want:  "orange",
 		},
 	}
