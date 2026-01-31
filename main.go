@@ -387,19 +387,6 @@ func validateRefName(ref string) error {
 	return nil
 }
 
-// checkoutRef checks out a specific git ref
-func checkoutRef(ref string) error {
-	if err := validateRefName(ref); err != nil {
-		return fmt.Errorf("invalid ref %q: %w", ref, err)
-	}
-
-	fmt.Printf("Checking out: %s\n", ref)
-	cmd := exec.Command("git", "checkout", ref)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
 // checkoutToWorktree creates a temporary git worktree for the given ref
 // This avoids modifying the user's workspace state
 func checkoutToWorktree(ref string) (string, error) {
