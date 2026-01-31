@@ -83,7 +83,7 @@ jobs:
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `scan` | What to scan: `latest_release` (highest version tag, sorted by semantic version), `head` (default branch), or a specific tag/branch name. **Note:** `latest_release` requires at least one tag in the repository and uses local git tags (not the GitHub Releases API). Use `head` if your repository has no tags. | No | `latest_release` |
+| `scan` | What to scan: `latest_release` (highest stable version tag, sorted by semantic version - pre-release tags like v1.0.0-beta are skipped), `head` (default branch), or a specific tag/branch name. **Note:** `latest_release` requires at least one tag in the repository and uses local git tags (not the GitHub Releases API). Tags not following semantic versioning may not sort as expected. Use `head` if your repository has no tags. | No | `latest_release` |
 | `output-file` | Path to save JSON scan results | No | `` (no file saved) |
 | `variable-prefix` | Prefix for environment variable names | No | `GRYPE_` |
 | `debug` | Print INPUT_/GITHUB_ environment variables when `true` (warning: may expose sensitive data in logs) | No | `false` |

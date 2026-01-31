@@ -1516,6 +1516,69 @@ func TestGetLatestReleaseTag(t *testing.T) {
 			t.Errorf("getLatestReleaseTag() = %q, want 'v2.0.0'", tag)
 		}
 	})
+
+	// Create a pre-release tag with higher version
+	cmd = exec.Command("git", "tag", "v3.0.0-beta.1")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create tag v3.0.0-beta.1: %v", err)
+	}
+
+	// Test that pre-release tags are skipped
+	t.Run("skips pre-release tags", func(t *testing.T) {
+		tag, err := getLatestReleaseTag()
+		if err != nil {
+			t.Errorf("getLatestReleaseTag() error = %v", err)
+		}
+		// Should return v2.0.0 (stable) not v3.0.0-beta.1 (pre-release)
+		if tag != "v2.0.0" {
+			t.Errorf("getLatestReleaseTag() = %q, want 'v2.0.0' (should skip pre-release)", tag)
+		}
+	})
+}
+
+// TestIsPreReleaseTag tests the isPreReleaseTag function
+func TestIsPreReleaseTag(t *testing.T) {
+	tests := []struct {
+		tag      string
+		expected bool
+	}{
+		// Stable releases
+		{"v1.0.0", false},
+		{"v2.3.4", false},
+		{"1.0.0", false},
+		{"V1.0.0", false},
+		{"v1.0", false},
+		{"v1", false},
+		{"1.2.3.4", false},
+
+		// Pre-releases
+		{"v1.0.0-alpha", true},
+		{"v1.0.0-beta", true},
+		{"v1.0.0-beta.1", true},
+		{"v1.0.0-rc1", true},
+		{"v1.0.0-rc.1", true},
+		{"v2.0.0-alpha.2", true},
+		{"1.0.0-beta", true},
+		{"v1.0-beta", true},
+		{"v1-alpha", true},
+
+		// Non-version tags (not pre-release format)
+		{"release-2024-01-15", false},
+		{"prod-deployment", false},
+		{"stable", false},
+		{"latest", false},
+		{"feature-branch-v1", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.tag, func(t *testing.T) {
+			result := isPreReleaseTag(tt.tag)
+			if result != tt.expected {
+				t.Errorf("isPreReleaseTag(%q) = %v, want %v", tt.tag, result, tt.expected)
+			}
+		})
+	}
 }
 
 // TestCheckoutRef tests the checkoutRef function
