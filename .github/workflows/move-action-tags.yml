@@ -5,6 +5,12 @@ name: Move Action Tags
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      source-tag:
+        description: 'Source tag to use for moving tags (e.g. v1.0.0 or v1.2.3-release). Leave empty to use the triggering tag.'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -18,21 +24,34 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
-            const tagName = context.ref.replace('refs/tags/', '');
-            if (!/^v\d+(?:\.\d+){0,2}$/.test(tagName)) {
-              core.info(`Skipping non-semver tag: ${tagName}`);
+            const inputTag = (core.getInput('source-tag') || '').trim();
+            const rawTagName = inputTag || context.ref.replace('refs/tags/', '');
+            if (!rawTagName) {
+              throw new Error('No tag provided and no triggering tag ref found');
+            }
+
+            // Allow tags with suffixes, e.g.
+            // - v1.2.3-release
+            // - v1.2.3_grype-0.107.0_db-2026-01-31T06-20-12Z
+            // We extract the leading semver-ish portion (vX, vX.Y, vX.Y.Z) and use that for tag movement.
+            const semverMatch = rawTagName.match(/^(v\d+(?:\.\d+){0,2})(?:$|[-_].*)/);
+            if (!semverMatch) {
+              core.info(`Skipping non-semver tag: ${rawTagName}`);
               return;
             }
 
-            const version = tagName.replace(/^v/, '');
+            const normalizedTagName = semverMatch[1];
+
+            const version = normalizedTagName.replace(/^v/, '');
             const parts = version.split('.');
             const major = `v${parts[0]}`;
             const minor = parts.length >= 2 ? `v${parts[0]}.${parts[1]}` : null;
+            const full = normalizedTagName;
 
             const { data: ref } = await github.rest.git.getRef({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              ref: `tags/${tagName}`,
+              ref: `tags/${rawTagName}`,
             });
             const sha = ref.object.sha;
 
@@ -59,7 +78,11 @@ jobs:
               }
             }
 
-            await upsertTag(major);
-            if (minor) {
-              await upsertTag(minor);
+            // Update moving tags (vX, vX.Y) and also ensure the full vX.Y.Z tag exists.
+            const tags = [major, minor, full].filter(Boolean);
+            const seen = new Set();
+            for (const tag of tags) {
+              if (seen.has(tag)) continue;
+              seen.add(tag);
+              await upsertTag(tag);
             }

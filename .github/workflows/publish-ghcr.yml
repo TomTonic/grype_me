@@ -123,7 +123,7 @@ jobs:
               const releaseTag = context.payload.release?.tag_name || '';
               targetTag = releaseTag ? `${releaseTag}-release` : '';
             } else {
-              targetTag = `v${actionVersion}_grype-${grypeVersion}_db-${dbBuilt}`;
+              targetTag = `v${actionVersion}_grype-${grypeVersion}_db-${dbBuiltTag}`;
             }
 
             let hasTag = false;
