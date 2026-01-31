@@ -78,7 +78,7 @@ func run() error {
 		fmt.Println("======================================")
 	}
 
-	scan := getEnv("INPUT_SCAN", "head")
+	scan := getEnv("INPUT_SCAN", "latest_release")
 	outputFile := getEnv("INPUT_OUTPUT-FILE", "")
 	variablePrefix := getEnv("INPUT_VARIABLE-PREFIX", "GRYPE_")
 
