@@ -17,18 +17,36 @@ permissions:
 
 jobs:
   move-tags:
-    name: Update moving tags (vX, vX.Y)
+    name: Update moving tags (vX, vX.Y, vX.Y.Z)
     runs-on: ubuntu-latest
     steps:
       - name: Update moving tags
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
-            const inputTag = (core.getInput('source-tag') || '').trim();
-            const rawTagName = inputTag || context.ref.replace('refs/tags/', '');
-            if (!rawTagName) {
-              throw new Error('No tag provided and no triggering tag ref found');
+            // NOTE: workflow_dispatch inputs are available via context.payload.inputs (not core.getInput),
+            // since this script runs inside actions/github-script (not a composite action).
+            const dispatchInputs = context.payload?.inputs || {};
+            const inputTagRaw = String(dispatchInputs['source-tag'] || '').trim();
+
+            // Determine source tag:
+            // - On tag push: context.ref is refs/tags/<tag>
+            // - On workflow_dispatch: require input
+            let rawTagName = '';
+            if (inputTagRaw) {
+              rawTagName = inputTagRaw;
+            } else if (String(context.ref || '').startsWith('refs/tags/')) {
+              rawTagName = context.ref.replace('refs/tags/', '');
+            } else {
+              throw new Error(
+                `No source tag provided. On manual runs, set the workflow input 'source-tag' (e.g. v1.1.0-release). Current ref: ${context.ref}`
+              );
             }
+
+            // Accept values like refs/tags/v1.2.3 too.
+            rawTagName = rawTagName.replace(/^refs\/tags\//, '');
+
+            core.info(`Source tag: ${rawTagName}`);
 
             // Allow tags with suffixes, e.g.
             // - v1.2.3-release
@@ -48,12 +66,16 @@ jobs:
             const minor = parts.length >= 2 ? `v${parts[0]}.${parts[1]}` : null;
             const full = normalizedTagName;
 
+            core.info(`Normalized semver: ${full}`);
+            core.info(`Will upsert tags: ${[major, minor, full].filter(Boolean).join(', ')}`);
+
             const { data: ref } = await github.rest.git.getRef({
               owner: context.repo.owner,
               repo: context.repo.repo,
               ref: `tags/${rawTagName}`,
             });
             const sha = ref.object.sha;
+            core.info(`Source SHA: ${sha}`);
 
             async function upsertTag(tag) {
               const refName = `refs/tags/${tag}`;
@@ -85,4 +107,17 @@ jobs:
               if (seen.has(tag)) continue;
               seen.add(tag);
               await upsertTag(tag);
+            }
+
+            // Verify tags now point at the expected SHA
+            for (const tag of tags) {
+              const { data: movedRef } = await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tag}`,
+              });
+              core.info(`Verified refs/tags/${tag} -> ${movedRef.object.sha}`);
+              if (movedRef.object.sha !== sha) {
+                throw new Error(`Tag ${tag} points to ${movedRef.object.sha}, expected ${sha}`);
+              }
             }
