@@ -96,4 +96,4 @@ outputs:
 
 runs:
   using: 'docker'
-  image: 'Dockerfile'
+  image: 'docker://ghcr.io/tomtonic/grype_me:v1'

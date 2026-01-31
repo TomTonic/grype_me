@@ -122,7 +122,10 @@ jobs:
           IMAGE_NAME="ghcr.io/${{ github.repository }}"
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           if [ "$EVENT_NAME" = "release" ]; then
-            TAGS="${IMAGE_NAME}:${RELEASE_TAG},${IMAGE_NAME}:latest"
+            VERSION="${RELEASE_TAG#v}"
+            MAJOR="v${VERSION%%.*}"
+            MINOR="v${VERSION%.*}"
+            TAGS="${IMAGE_NAME}:${RELEASE_TAG},${IMAGE_NAME}:${MAJOR},${IMAGE_NAME}:${MINOR},${IMAGE_NAME}:latest"
           else
             TAGS="${IMAGE_NAME}:grype-${GRYPE_VERSION}"
           fi
