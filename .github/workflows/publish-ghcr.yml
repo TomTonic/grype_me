@@ -48,7 +48,6 @@ jobs:
               repo: 'grype'
             });
             const grypeVersion = release.data.tag_name.replace(/^v/, '');
-            const tag = `grype-${grypeVersion}`;
             core.info(`Latest grype release: ${grypeVersion}`);
 
             // Get latest action release for scheduled builds
@@ -97,13 +96,32 @@ jobs:
               core.info('No existing GHCR package found yet.');
             }
 
-            const hasTag = versions.some((version) =>
-              (version.metadata?.container?.tags || []).includes(tag)
-            );
-            core.info(`GHCR tag ${tag} exists: ${hasTag}`);
+            // Determine which tag to check based on event
+            const eventName = context.eventName;
+            let targetTag;
+            if (eventName === 'release') {
+              const releaseTag = context.payload.release?.tag_name || '';
+              targetTag = releaseTag ? `${releaseTag}-release` : '';
+            } else {
+              targetTag = `v${actionVersion}_grype-${grypeVersion}`;
+            }
+
+            let hasTag = false;
+            if (targetTag) {
+              hasTag = versions.some((version) =>
+                (version.metadata?.container?.tags || []).includes(targetTag)
+              );
+              core.info(`GHCR tag ${targetTag} exists: ${hasTag}`);
+            } else {
+              core.info('No target tag determined; will publish.');
+            }
+
+            const publish = eventName === 'release' ? 'true' : (hasTag ? 'false' : 'true');
+
             core.setOutput('grype_version', grypeVersion);
             core.setOutput('action_version', actionVersion);
-            core.setOutput('publish', hasTag ? 'false' : 'true');
+            core.setOutput('target_tag', targetTag || '');
+            core.setOutput('publish', publish);
 
   publish:
     name: Publish to GHCR
