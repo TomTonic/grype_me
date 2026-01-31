@@ -128,6 +128,20 @@ In addition to the outputs, the action sets environment variables with a configu
     fi
 ```
 
+## Migration Notes
+
+### Upgrading from versions with `repository` and `branch` parameters
+
+If you were previously using the `repository` and `branch` input parameters, these have been replaced with a unified `scan` parameter. The new `scan` parameter defaults to `latest_release`, which scans the highest semantic version tag in your repository.
+
+**Breaking change:** The default behavior has changed from scanning the current checkout to scanning the latest release tag. To maintain the previous behavior (scanning the current checkout), explicitly set `scan: 'head'`:
+
+```yaml
+- uses: TomTonic/grype_me@v1
+  with:
+    scan: 'head'  # Scan the default branch (previous default behavior)
+```
+
 ## License
 
 This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.

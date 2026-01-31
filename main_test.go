@@ -1320,12 +1320,12 @@ func TestHandleScanTarget(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "empty scan defaults to head",
+			name:    "empty scan defaults to latest_release",
 			scan:    "",
 			wantErr: false,
 		},
 		{
-			name:    "whitespace scan defaults to head",
+			name:    "whitespace scan defaults to latest_release",
 			scan:    "  ",
 			wantErr: false,
 		},

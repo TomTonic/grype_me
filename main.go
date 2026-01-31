@@ -179,13 +179,15 @@ func isDebugEnabled() bool {
 // handleScanTarget processes the scan input parameter and checks out the appropriate ref.
 // Supported values:
 // - "head": checkout the default branch (main/master)
-// - "latest_release": checkout the latest release tag
+// - "latest_release": checkout the latest release tag (default if empty/whitespace)
 // - any other value: treated as a tag or branch name
+//
+// If scan is empty or contains only whitespace, it defaults to "latest_release".
 func handleScanTarget(scan string) error {
-	// Normalize the scan value
+	// Normalize the scan value - empty or whitespace defaults to latest_release
 	scan = strings.TrimSpace(scan)
 	if scan == "" {
-		scan = "head"
+		scan = "latest_release"
 	}
 
 	fmt.Printf("Processing scan target: %s\n", scan)
