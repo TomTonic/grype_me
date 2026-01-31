@@ -182,23 +182,42 @@ jobs:
         run: |
           IMAGE_NAME="ghcr.io/${{ github.repository }}"
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+
           if [ "$EVENT_NAME" = "release" ]; then
-            # Manual release: vX.Y.Z-release + moving tags
-            VERSION="${RELEASE_TAG#v}"
-            MAJOR="v${VERSION%%.*}"
-            MINOR="v${VERSION%.*}"
-            SPECIFIC_TAG="${IMAGE_NAME}:v${VERSION}-release"
-            MOVING_TAGS="${IMAGE_NAME}:${RELEASE_TAG},${IMAGE_NAME}:${MAJOR},${IMAGE_NAME}:${MINOR},${IMAGE_NAME}:latest"
+            # Manual release triggered by GitHub Release
+            # RELEASE_TAG may be "v1.2.3" or "v1.2.3-release" - normalize to get semver
+            SEMVER="${RELEASE_TAG#v}"           # strip leading v
+            SEMVER="${SEMVER%-release}"         # strip trailing -release if present
+
+            MAJOR="v${SEMVER%%.*}"              # v1
+            MINOR="v${SEMVER%.*}"               # v1.2
+            PATCH="v${SEMVER}"                  # v1.2.3
+
+            # Fixed tag (immutable): vX.Y.Z-release
+            SPECIFIC_TAG="${IMAGE_NAME}:${PATCH}-release"
+
+            # Moving tags: vX.Y.Z, vX.Y, vX, latest
+            MOVING_TAGS="${IMAGE_NAME}:${PATCH},${IMAGE_NAME}:${MINOR},${IMAGE_NAME}:${MAJOR},${IMAGE_NAME}:latest"
+
             TAGS="${SPECIFIC_TAG},${MOVING_TAGS}"
           else
-            # Automatic build: vX.Y.Z_grype-A.B.C_db-YYYY-MM-DD + moving tags
-            VERSION="${ACTION_VERSION}"
-            MAJOR="v${VERSION%%.*}"
-            MINOR="v${VERSION%.*}"
-            SPECIFIC_TAG="${IMAGE_NAME}:v${VERSION}_grype-${GRYPE_VERSION}_db-${DB_BUILT}"
-            MOVING_TAGS="${IMAGE_NAME}:v${VERSION},${IMAGE_NAME}:${MAJOR},${IMAGE_NAME}:${MINOR},${IMAGE_NAME}:latest"
+            # Automatic/nightly build (schedule or workflow_dispatch)
+            SEMVER="${ACTION_VERSION}"
+
+            MAJOR="v${SEMVER%%.*}"              # v1
+            MINOR="v${SEMVER%.*}"               # v1.2
+            PATCH="v${SEMVER}"                  # v1.2.3
+
+            # Fixed tag (immutable): vX.Y.Z_grype-A.B.C_db-YYYY-MM-DDTHH-MM-SSZ
+            SPECIFIC_TAG="${IMAGE_NAME}:${PATCH}_grype-${GRYPE_VERSION}_db-${DB_BUILT}"
+
+            # Moving tags: vX.Y.Z, vX.Y, vX, latest
+            MOVING_TAGS="${IMAGE_NAME}:${PATCH},${IMAGE_NAME}:${MINOR},${IMAGE_NAME}:${MAJOR},${IMAGE_NAME}:latest"
+
             TAGS="${SPECIFIC_TAG},${MOVING_TAGS}"
           fi
+
+          echo "Generated tags: $TAGS"
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
 
       - name: Build and push image
