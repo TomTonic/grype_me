@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,6 +63,9 @@ type Config struct {
 	OnlyFixed      bool
 	DBUpdate       bool
 	Debug          bool
+
+	// Badge options
+	BadgeLabel string
 }
 
 func main() {
@@ -134,7 +138,7 @@ func run() error {
 	}
 
 	// Set GitHub Actions outputs
-	if err := setOutputs(config.VariablePrefix, stats, output, jsonOutputPath); err != nil {
+	if err := setOutputs(config.VariablePrefix, stats, output, jsonOutputPath, config.BadgeLabel); err != nil {
 		return fmt.Errorf("failed to set outputs: %w", err)
 	}
 
@@ -164,6 +168,7 @@ func loadConfig() Config {
 		OnlyFixed:      strings.EqualFold(getEnv("INPUT_ONLY-FIXED", "false"), "true"),
 		DBUpdate:       strings.EqualFold(getEnv("INPUT_DB-UPDATE", "false"), "true"),
 		Debug:          strings.EqualFold(getEnv("INPUT_DEBUG", "false"), "true"),
+		BadgeLabel:     getEnv("INPUT_BADGE-LABEL", "vulnerabilities"),
 	}
 }
 
@@ -600,7 +605,7 @@ func copyOutputFile(src, dst string) (string, error) {
 	return dst, nil
 }
 
-func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath string) error {
+func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath, badgeLabel string) error {
 	githubOutput := os.Getenv("GITHUB_OUTPUT")
 	if githubOutput == "" {
 		fmt.Println("Warning: GITHUB_OUTPUT not set, skipping output generation")
@@ -613,6 +618,9 @@ func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath string
 	}
 	defer func() { _ = f.Close() }()
 
+	// Generate badge URL
+	badgeURL := generateBadgeURL(stats, badgeLabel)
+
 	outputs := map[string]string{
 		"grype-version": output.Descriptor.Version,
 		"db-version":    output.DBBuilt(),
@@ -621,6 +629,7 @@ func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath string
 		"high":          fmt.Sprintf("%d", stats.High),
 		"medium":        fmt.Sprintf("%d", stats.Medium),
 		"low":           fmt.Sprintf("%d", stats.Low),
+		"badge-url":     badgeURL,
 	}
 	if jsonPath != "" {
 		outputs["json-output"] = jsonPath
@@ -649,6 +658,7 @@ func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath string
 			"HIGH":       fmt.Sprintf("%d", stats.High),
 			"MEDIUM":     fmt.Sprintf("%d", stats.Medium),
 			"LOW":        fmt.Sprintf("%d", stats.Low),
+			"BADGE_URL":  badgeURL,
 		}
 		for key, value := range envVars {
 			if _, err := fmt.Fprintf(envFile, "%s%s=%s\n", prefix, key, value); err != nil {
@@ -674,4 +684,72 @@ func printSummary(stats Stats, output *GrypeOutput) {
 		fmt.Printf("  Other:    %d\n", stats.Other)
 	}
 	fmt.Println("==========================")
+}
+
+// generateBadgeURL creates a shields.io badge URL based on scan statistics.
+// The badge displays vulnerability counts and uses colors based on severity:
+// - Green: No vulnerabilities
+// - Yellow: Only low/medium vulnerabilities
+// - Orange: High vulnerabilities present
+// - Red: Critical vulnerabilities present
+func generateBadgeURL(stats Stats, label string) string {
+	// Build the badge message showing counts
+	message := formatBadgeMessage(stats)
+
+	// Determine badge color based on severity
+	color := determineBadgeColor(stats)
+
+	// Use shields.io static badge format
+	// URL format: https://img.shields.io/badge/{label}-{message}-{color}
+	encodedLabel := url.PathEscape(label)
+	encodedMessage := url.PathEscape(message)
+
+	return fmt.Sprintf("https://img.shields.io/badge/%s-%s-%s", encodedLabel, encodedMessage, color)
+}
+
+// formatBadgeMessage creates the message portion of the badge.
+// Shows "none" if no vulnerabilities, otherwise shows counts by severity.
+func formatBadgeMessage(stats Stats) string {
+	if stats.Total == 0 {
+		return "none"
+	}
+
+	var parts []string
+
+	if stats.Critical > 0 {
+		parts = append(parts, fmt.Sprintf("%d critical", stats.Critical))
+	}
+	if stats.High > 0 {
+		parts = append(parts, fmt.Sprintf("%d high", stats.High))
+	}
+	if stats.Medium > 0 {
+		parts = append(parts, fmt.Sprintf("%d medium", stats.Medium))
+	}
+	if stats.Low > 0 {
+		parts = append(parts, fmt.Sprintf("%d low", stats.Low))
+	}
+
+	// If only "other" severities exist
+	if len(parts) == 0 && stats.Other > 0 {
+		parts = append(parts, fmt.Sprintf("%d other", stats.Other))
+	}
+
+	return strings.Join(parts, " | ")
+}
+
+// determineBadgeColor returns the badge color based on the highest severity found.
+// Colors follow a traffic light pattern for easy visual interpretation.
+func determineBadgeColor(stats Stats) string {
+	switch {
+	case stats.Critical > 0:
+		return "critical" // red
+	case stats.High > 0:
+		return "orange"
+	case stats.Medium > 0:
+		return "yellow"
+	case stats.Low > 0 || stats.Other > 0:
+		return "yellowgreen"
+	default:
+		return "brightgreen"
+	}
 }

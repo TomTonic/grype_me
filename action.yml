@@ -82,6 +82,12 @@ inputs:
       Warning: may expose sensitive data in logs.
     required: false
     default: 'false'
+  badge-label:
+    description: >-
+      Label text for the generated shields.io badge URL.
+      Default: 'vulnerabilities'.
+    required: false
+    default: 'vulnerabilities'
 
 outputs:
   grype-version:
@@ -100,6 +106,12 @@ outputs:
     description: 'Number of low severity vulnerabilities'
   json-output:
     description: 'Path to the JSON output file (if output-file was specified)'
+  badge-url:
+    description: >-
+      shields.io badge URL showing vulnerability summary.
+      Color indicates severity: green (none), yellowgreen (low),
+      yellow (medium), orange (high), red (critical).
+      Use in README: ![Vulnerabilities](${{ steps.grype.outputs.badge-url }})
 
 runs:
   using: 'docker'
