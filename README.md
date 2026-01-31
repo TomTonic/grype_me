@@ -183,6 +183,7 @@ jobs:
         with:
           name: grype-scan-results
           path: grype-results.json
+```
 
 ## Inputs
 
