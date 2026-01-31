@@ -1694,6 +1694,8 @@ func TestHandleScanTargetLatestRelease(t *testing.T) {
 	}
 
 	// Test latest_release with a tag
+	// Note: This test verifies error handling only. Content verification
+	// (ensuring the correct tag is checked out) is done in TestScanLatestRelease.
 	t.Run("with tag", func(t *testing.T) {
 		err := handleScanTarget("latest_release")
 		if err != nil {
