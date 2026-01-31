@@ -195,9 +195,7 @@ func handleScanTarget(scan string) error {
 		// Checkout the default branch (typically main or master)
 		defaultBranch, err := getDefaultBranch()
 		if err != nil {
-			fmt.Printf("Warning: Could not determine default branch: %v\n", err)
-			// If we can't determine the default branch, we're likely already on it
-			return nil
+			return fmt.Errorf("could not determine default branch: %w", err)
 		}
 		fmt.Printf("Checking out default branch: %s\n", defaultBranch)
 		return checkoutRef(defaultBranch)
