@@ -1501,3 +1501,312 @@ func TestHandleScanTargetLatestRelease(t *testing.T) {
 		}
 	})
 }
+
+// TestScanBranch verifies that scanning a branch checks out the correct content
+func TestScanBranch(t *testing.T) {
+	// Skip if git is not available
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available, skipping test")
+	}
+
+	// Create a temporary git repository for testing
+	tmpDir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+
+	// Configure git user for commits
+	cmd = exec.Command("git", "config", "user.email", "test@test.com")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to configure git email: %v", err)
+	}
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to configure git name: %v", err)
+	}
+
+	// Create initial commit on main/master branch
+	testFile := filepath.Join(tmpDir, "version.txt")
+	if err := os.WriteFile(testFile, []byte("main-content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	cmd = exec.Command("git", "commit", "-m", "initial commit")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git commit: %v", err)
+	}
+
+	// Create a feature branch with different content
+	cmd = exec.Command("git", "checkout", "-b", "feature-branch")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create feature branch: %v", err)
+	}
+	if err := os.WriteFile(testFile, []byte("feature-branch-content"), 0644); err != nil {
+		t.Fatalf("Failed to update test file: %v", err)
+	}
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	cmd = exec.Command("git", "commit", "-m", "feature branch commit")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git commit: %v", err)
+	}
+
+	// Go back to main/master
+	_ = exec.Command("git", "checkout", "master").Run()
+	_ = exec.Command("git", "checkout", "main").Run()
+
+	// Save original directory and change to temp dir
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change to temp directory: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(origDir)
+	}()
+
+	// Scan the feature branch
+	err = handleScanTarget("feature-branch")
+	if err != nil {
+		t.Fatalf("handleScanTarget('feature-branch') error = %v", err)
+	}
+
+	// Verify we're on the feature branch by checking file content
+	content, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read test file: %v", err)
+	}
+	if string(content) != "feature-branch-content" {
+		t.Errorf("Expected 'feature-branch-content', got '%s'", string(content))
+	}
+}
+
+// TestScanTag verifies that scanning a tag checks out the correct content
+func TestScanTag(t *testing.T) {
+	// Skip if git is not available
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available, skipping test")
+	}
+
+	// Create a temporary git repository for testing
+	tmpDir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+
+	// Configure git user for commits
+	cmd = exec.Command("git", "config", "user.email", "test@test.com")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to configure git email: %v", err)
+	}
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to configure git name: %v", err)
+	}
+
+	// Create initial commit
+	testFile := filepath.Join(tmpDir, "version.txt")
+	if err := os.WriteFile(testFile, []byte("v1.0.0-content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	cmd = exec.Command("git", "commit", "-m", "release v1.0.0")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git commit: %v", err)
+	}
+
+	// Create a tag at this commit
+	cmd = exec.Command("git", "tag", "v1.0.0")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create tag: %v", err)
+	}
+
+	// Make another commit with different content (simulating ongoing development)
+	if err := os.WriteFile(testFile, []byte("development-content"), 0644); err != nil {
+		t.Fatalf("Failed to update test file: %v", err)
+	}
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	cmd = exec.Command("git", "commit", "-m", "development commit")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git commit: %v", err)
+	}
+
+	// Save original directory and change to temp dir
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change to temp directory: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(origDir)
+	}()
+
+	// Scan the tag
+	err = handleScanTarget("v1.0.0")
+	if err != nil {
+		t.Fatalf("handleScanTarget('v1.0.0') error = %v", err)
+	}
+
+	// Verify we're at the tag by checking file content
+	content, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read test file: %v", err)
+	}
+	if string(content) != "v1.0.0-content" {
+		t.Errorf("Expected 'v1.0.0-content', got '%s'", string(content))
+	}
+}
+
+// TestScanLatestRelease verifies that scanning latest_release checks out the latest tag
+func TestScanLatestRelease(t *testing.T) {
+	// Skip if git is not available
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available, skipping test")
+	}
+
+	// Create a temporary git repository for testing
+	tmpDir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+
+	// Configure git user for commits
+	cmd = exec.Command("git", "config", "user.email", "test@test.com")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to configure git email: %v", err)
+	}
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to configure git name: %v", err)
+	}
+
+	// Create initial commit for v1.0.0
+	testFile := filepath.Join(tmpDir, "version.txt")
+	if err := os.WriteFile(testFile, []byte("v1.0.0-content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	cmd = exec.Command("git", "commit", "-m", "release v1.0.0")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git commit: %v", err)
+	}
+
+	// Create tag v1.0.0
+	cmd = exec.Command("git", "tag", "v1.0.0")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create tag v1.0.0: %v", err)
+	}
+
+	// Create commit for v2.0.0
+	if err := os.WriteFile(testFile, []byte("v2.0.0-content"), 0644); err != nil {
+		t.Fatalf("Failed to update test file: %v", err)
+	}
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	cmd = exec.Command("git", "commit", "-m", "release v2.0.0")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git commit: %v", err)
+	}
+
+	// Create tag v2.0.0 (the latest release)
+	cmd = exec.Command("git", "tag", "v2.0.0")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create tag v2.0.0: %v", err)
+	}
+
+	// Make another commit (simulating ongoing development after the release)
+	if err := os.WriteFile(testFile, []byte("development-content"), 0644); err != nil {
+		t.Fatalf("Failed to update test file: %v", err)
+	}
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	cmd = exec.Command("git", "commit", "-m", "development commit")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git commit: %v", err)
+	}
+
+	// Save original directory and change to temp dir
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change to temp directory: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(origDir)
+	}()
+
+	// Scan latest_release
+	err = handleScanTarget("latest_release")
+	if err != nil {
+		t.Fatalf("handleScanTarget('latest_release') error = %v", err)
+	}
+
+	// Verify we're at the latest release (v2.0.0) by checking file content
+	content, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read test file: %v", err)
+	}
+	if string(content) != "v2.0.0-content" {
+		t.Errorf("Expected 'v2.0.0-content', got '%s'", string(content))
+	}
+}
