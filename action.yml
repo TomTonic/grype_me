@@ -1,6 +1,6 @@
 ---
-name: 'Grype Vulnerability Scanner'
-description: 'Scan your repository for vulnerabilities using Anchore Grype'
+name: 'grype-scan my project'
+description: 'Scan your repository for vulnerabilities using Anchore Grype (software supply chain security)'
 branding:
   icon: 'shield'
   color: 'blue'
