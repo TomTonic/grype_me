@@ -83,7 +83,7 @@ jobs:
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `scan` | What to scan: `head` (default branch), `latest_release` (latest release tag), or a specific tag/branch name | No | `head` |
+| `scan` | What to scan: `latest_release` (latest release tag), `head` (default branch), or a specific tag/branch name | No | `latest_release` |
 | `output-file` | Path to save JSON scan results | No | `` (no file saved) |
 | `variable-prefix` | Prefix for environment variable names | No | `GRYPE_` |
 | `debug` | Print INPUT_/GITHUB_ environment variables when `true` (warning: may expose sensitive data in logs) | No | `false` |
