@@ -37,17 +37,17 @@ jobs:
           # - 'head': Scan current working directory (for PR checks)
           # - 'v1.2.3': Scan a specific tag
           scan: 'head'  # Use 'latest_release' for scheduled scans
-          
+
           # Optional: Fail build on vulnerabilities
           fail-build: false  # Set to 'true' to fail on vulnerabilities
           severity-cutoff: 'high'  # negligible, low, medium, high, critical
-          
+
           # Optional: Output configuration
           output-file: 'grype-results.json'
-          
+
           # Optional: Filter results
           only-fixed: false  # Set to 'true' to only show fixable vulnerabilities
-          
+
           variable-prefix: 'GRYPE_'
 
       - name: Display scan summary
