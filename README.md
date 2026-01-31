@@ -10,7 +10,7 @@ A lean GitHub Action to scan for vulnerabilities using [Anchore Grype](https://g
 - 📊 Provides detailed vulnerability counts by severity (Critical, High, Medium, Low)
 - 🚨 **Fail build** on vulnerabilities at or above a severity threshold
 - 🔧 Filter to show only vulnerabilities with available fixes
-- 📁 Outputs results as JSON or SARIF file (optional)
+- 📁 Outputs results as JSON file (optional)
 - 🚀 Uses Go for fast execution
 - ⏰ Supports scheduled scans (e.g., nightly security checks)
 
@@ -137,7 +137,6 @@ jobs:
         with:
           scan: 'latest_release'
           output-file: 'grype-results.json'
-          output-format: 'json'
           fail-build: true
           severity-cutoff: 'medium'
           only-fixed: false
@@ -179,8 +178,7 @@ You can use **either** the `scan` input **or** one of `image`/`path`/`sbom` - th
 |-------|-------------|----------|---------|
 | `fail-build` | Fail the workflow if vulnerabilities are found at or above `severity-cutoff` | No | `false` |
 | `severity-cutoff` | Minimum severity to trigger build failure: `negligible`, `low`, `medium`, `high`, `critical` | No | `medium` |
-| `output-file` | Path to save scan results | No | (no file saved) |
-| `output-format` | Output format: `json`, `sarif`, `table`, `cyclonedx-json`, `spdx-json` | No | `json` |
+| `output-file` | Path to save scan results (JSON) | No | (no file saved) |
 | `only-fixed` | Only report vulnerabilities with a fix available | No | `false` |
 | `variable-prefix` | Prefix for environment variable names | No | `GRYPE_` |
 | `debug` | Print INPUT_/GITHUB_ environment variables (warning: may expose sensitive data) | No | `false` |
@@ -244,7 +242,6 @@ The `repository` and `branch` input parameters have been replaced with a unified
 - **Artifact scanning**: Use `image`, `path`, or `sbom` inputs to scan pre-built artifacts
 - **Build failure**: Use `fail-build: true` with `severity-cutoff` to fail on vulnerabilities
 - **Fixed-only filter**: Use `only-fixed: true` to only show fixable vulnerabilities
-- **Output formats**: Support for SARIF, CycloneDX, SPDX in addition to JSON
 
 ## License
 

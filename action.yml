@@ -59,11 +59,6 @@ inputs:
     description: 'Path to save JSON scan results (optional)'
     required: false
     default: ''
-  output-format:
-    description: >-
-      Output format: json, sarif, cyclonedx-json, cyclonedx-xml, table.
-    required: false
-    default: 'json'
   variable-prefix:
     description: >-
       Prefix for environment variable names (default: "GRYPE_")

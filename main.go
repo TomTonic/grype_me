@@ -58,7 +58,6 @@ type Config struct {
 	FailBuild      bool
 	SeverityCutoff string
 	OutputFile     string
-	OutputFormat   string
 	VariablePrefix string
 	OnlyFixed      bool
 	Debug          bool
@@ -148,7 +147,6 @@ func loadConfig() Config {
 		FailBuild:      strings.EqualFold(getEnv("INPUT_FAIL-BUILD", "false"), "true"),
 		SeverityCutoff: strings.ToLower(getEnv("INPUT_SEVERITY-CUTOFF", "medium")),
 		OutputFile:     getEnv("INPUT_OUTPUT-FILE", ""),
-		OutputFormat:   getEnv("INPUT_OUTPUT-FORMAT", "json"),
 		VariablePrefix: getEnv("INPUT_VARIABLE-PREFIX", "GRYPE_"),
 		OnlyFixed:      strings.EqualFold(getEnv("INPUT_ONLY-FIXED", "false"), "true"),
 		Debug:          strings.EqualFold(getEnv("INPUT_DEBUG", "false"), "true"),
