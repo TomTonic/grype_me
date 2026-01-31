@@ -550,33 +550,38 @@ func TestGenerateBadgeURL(t *testing.T) {
 		name     string
 		stats    Stats
 		label    string
-		wantURL  string
+		dbBuilt  string
 		contains []string
 	}{
 		{
-			name:  "no vulnerabilities",
-			stats: Stats{Total: 0},
-			label: "vulnerabilities",
+			name:    "no vulnerabilities with DB date",
+			stats:   Stats{Total: 0},
+			label:   "grype scan release",
+			dbBuilt: "2026-01-30T12:34:56Z",
 			contains: []string{
 				"https://img.shields.io/badge/",
-				"vulnerabilities",
+				"grype%20scan%20release",
 				"none",
+				"db%20build%202026-01-30",
 				"brightgreen",
 			},
 		},
 		{
-			name:  "critical vulnerabilities",
-			stats: Stats{Total: 2, Critical: 2},
-			label: "vulnerabilities",
+			name:    "critical vulnerabilities with DB date",
+			stats:   Stats{Total: 2, Critical: 2},
+			label:   "grype scan image",
+			dbBuilt: "2026-01-30",
 			contains: []string{
 				"https://img.shields.io/badge/",
 				"critical",
+				"db%20build%202026-01-30",
 			},
 		},
 		{
-			name:  "high vulnerabilities",
-			stats: Stats{Total: 3, High: 3},
-			label: "security",
+			name:    "high vulnerabilities",
+			stats:   Stats{Total: 3, High: 3},
+			label:   "security",
+			dbBuilt: "2026-01-30",
 			contains: []string{
 				"https://img.shields.io/badge/",
 				"security",
@@ -585,9 +590,10 @@ func TestGenerateBadgeURL(t *testing.T) {
 			},
 		},
 		{
-			name:  "medium vulnerabilities",
-			stats: Stats{Total: 5, Medium: 5},
-			label: "CVEs",
+			name:    "medium vulnerabilities",
+			stats:   Stats{Total: 5, Medium: 5},
+			label:   "CVEs",
+			dbBuilt: "",
 			contains: []string{
 				"https://img.shields.io/badge/",
 				"CVEs",
@@ -596,9 +602,10 @@ func TestGenerateBadgeURL(t *testing.T) {
 			},
 		},
 		{
-			name:  "low vulnerabilities",
-			stats: Stats{Total: 10, Low: 10},
-			label: "scan results",
+			name:    "low vulnerabilities",
+			stats:   Stats{Total: 10, Low: 10},
+			label:   "scan results",
+			dbBuilt: "2026-01-30",
 			contains: []string{
 				"https://img.shields.io/badge/",
 				"low",
@@ -606,29 +613,31 @@ func TestGenerateBadgeURL(t *testing.T) {
 			},
 		},
 		{
-			name:  "mixed vulnerabilities",
-			stats: Stats{Total: 10, Critical: 1, High: 2, Medium: 3, Low: 4},
-			label: "vulnerabilities",
+			name:    "mixed vulnerabilities",
+			stats:   Stats{Total: 10, Critical: 1, High: 2, Medium: 3, Low: 4},
+			label:   "vulnerabilities",
+			dbBuilt: "2026-01-30",
 			contains: []string{
 				"https://img.shields.io/badge/",
 				"critical",
 			},
 		},
 		{
-			name:  "label with spaces",
-			stats: Stats{Total: 0},
-			label: "security scan",
+			name:    "no DB date",
+			stats:   Stats{Total: 0},
+			label:   "grype scan head",
+			dbBuilt: "",
 			contains: []string{
 				"https://img.shields.io/badge/",
-				"security%20scan",
-				"brightgreen",
+				"grype%20scan%20head",
+				"none-brightgreen",
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := generateBadgeURL(tt.stats, tt.label)
+			got := generateBadgeURL(tt.stats, tt.label, tt.dbBuilt)
 			for _, substr := range tt.contains {
 				if !strings.Contains(got, substr) {
 					t.Errorf("generateBadgeURL() = %v, want to contain %q", got, substr)
@@ -741,6 +750,138 @@ func TestDetermineBadgeColor(t *testing.T) {
 			got := determineBadgeColor(tt.stats)
 			if got != tt.want {
 				t.Errorf("determineBadgeColor() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestDetermineScanMode tests the scan mode detection for badge labels
+func TestDetermineScanMode(t *testing.T) {
+	tests := []struct {
+		name   string
+		config Config
+		want   string
+	}{
+		{
+			name:   "image scan",
+			config: Config{Image: "alpine:latest"},
+			want:   "image",
+		},
+		{
+			name:   "path scan",
+			config: Config{Path: "./src"},
+			want:   "path",
+		},
+		{
+			name:   "sbom scan",
+			config: Config{SBOM: "sbom.json"},
+			want:   "sbom",
+		},
+		{
+			name:   "latest_release scan (explicit)",
+			config: Config{Scan: "latest_release"},
+			want:   "release",
+		},
+		{
+			name:   "latest_release scan (default)",
+			config: Config{Scan: ""},
+			want:   "release",
+		},
+		{
+			name:   "head scan",
+			config: Config{Scan: "head"},
+			want:   "head",
+		},
+		{
+			name:   "specific ref scan",
+			config: Config{Scan: "v1.2.3"},
+			want:   "ref",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := determineScanMode(tt.config)
+			if got != tt.want {
+				t.Errorf("determineScanMode() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestBuildBadgeLabel tests the badge label generation
+func TestBuildBadgeLabel(t *testing.T) {
+	tests := []struct {
+		name     string
+		scanMode string
+		want     string
+	}{
+		{
+			name:     "release scan",
+			scanMode: "release",
+			want:     "grype scan release",
+		},
+		{
+			name:     "image scan",
+			scanMode: "image",
+			want:     "grype scan image",
+		},
+		{
+			name:     "head scan",
+			scanMode: "head",
+			want:     "grype scan head",
+		},
+		{
+			name:     "path scan",
+			scanMode: "path",
+			want:     "grype scan path",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildBadgeLabel(tt.scanMode)
+			if got != tt.want {
+				t.Errorf("buildBadgeLabel() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestExtractDBDate tests extracting date from timestamp
+func TestExtractDBDate(t *testing.T) {
+	tests := []struct {
+		name      string
+		timestamp string
+		want      string
+	}{
+		{
+			name:      "full ISO timestamp",
+			timestamp: "2026-01-30T12:34:56Z",
+			want:      "2026-01-30",
+		},
+		{
+			name:      "date only",
+			timestamp: "2026-01-30",
+			want:      "2026-01-30",
+		},
+		{
+			name:      "short timestamp",
+			timestamp: "2026-01",
+			want:      "2026-01",
+		},
+		{
+			name:      "empty string",
+			timestamp: "",
+			want:      "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractDBDate(tt.timestamp)
+			if got != tt.want {
+				t.Errorf("extractDBDate() = %v, want %v", got, tt.want)
 			}
 		})
 	}
