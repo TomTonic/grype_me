@@ -1,0 +1,210 @@
+---
+name: Cleanup GHCR Images
+
+'on':
+  schedule:
+    # Run weekly on Sunday at 03:00 UTC
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Dry run (do not delete, just list)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      keep-last:
+        description: 'Number of nightly images to keep per minor version'
+        required: false
+        default: '7'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  cleanup:
+    name: Cleanup old images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
+      - name: Delete old GHCR images
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          DRY_RUN: ${{ inputs.dry-run || 'false' }}
+          KEEP_LAST: ${{ inputs.keep-last || '7' }}
+        with:
+          script: |
+            const dryRun = process.env.DRY_RUN === 'true';
+            const keepLast = parseInt(process.env.KEEP_LAST, 10) || 7;
+
+            core.info(`Mode: ${dryRun ? 'DRY RUN' : 'DELETE'}`);
+            core.info(`Keep last ${keepLast} nightly images per minor version`);
+
+            const ownerInfo = await github.rest.users.getByUsername({
+              username: context.repo.owner
+            });
+            const ownerType = ownerInfo.data.type || 'User';
+            const packageName = context.repo.repo;
+
+            // Fetch all package versions
+            let versions = [];
+            try {
+              const listParams = {
+                package_type: 'container',
+                package_name: packageName,
+                per_page: 100
+              };
+              if (ownerType === 'Organization') {
+                listParams.org = context.repo.owner;
+                versions = await github.paginate(
+                  github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
+                  listParams
+                );
+              } else {
+                listParams.username = context.repo.owner;
+                versions = await github.paginate(
+                  github.rest.packages.getAllPackageVersionsForPackageOwnedByUser,
+                  listParams
+                );
+              }
+            } catch (error) {
+              if (error.status === 404) {
+                core.info('No GHCR package found.');
+                return;
+              }
+              throw error;
+            }
+
+            core.info(`Found ${versions.length} package versions`);
+
+            // Patterns for tags we want to keep unconditionally
+            const protectedPatterns = [
+              /^v\d+$/,                    // v1, v2, etc. (major moving tags)
+              /^v\d+\.\d+$/,               // v1.2, v1.3, etc. (minor moving tags)
+              /^v\d+\.\d+\.\d+$/,          // v1.2.3, v1.2.4, etc. (patch moving tags)
+              /^v\d+\.\d+\.\d+-release$/,  // v1.2.3-release (release fixed tags)
+              /^latest$/,                  // latest
+            ];
+
+            // Pattern for nightly tags: vX.Y.Z_grype-A.B.C_db-...
+            const nightlyPattern = /^v(\d+)\.(\d+)\.(\d+)_grype-.*_db-(.*)$/;
+
+            // Categorize versions
+            const protectedVersions = [];
+            const nightlyVersions = [];
+            const untaggedVersions = [];
+            const otherVersions = [];
+
+            for (const version of versions) {
+              const tags = version.metadata?.container?.tags || [];
+
+              if (tags.length === 0) {
+                untaggedVersions.push(version);
+                continue;
+              }
+
+              // Check if any tag is protected
+              const isProtected = tags.some(tag =>
+                protectedPatterns.some(pattern => pattern.test(tag))
+              );
+
+              if (isProtected) {
+                protectedVersions.push(version);
+                continue;
+              }
+
+              // Check if this is a nightly build
+              const nightlyTag = tags.find(tag => nightlyPattern.test(tag));
+              if (nightlyTag) {
+                const match = nightlyTag.match(nightlyPattern);
+                nightlyVersions.push({
+                  version,
+                  tag: nightlyTag,
+                  minor: `v${match[1]}.${match[2]}`,
+                  dbDate: match[4],
+                  createdAt: new Date(version.created_at)
+                });
+                continue;
+              }
+
+              otherVersions.push(version);
+            }
+
+            core.info(`Protected versions (keeping): ${protectedVersions.length}`);
+            core.info(`Nightly versions: ${nightlyVersions.length}`);
+            core.info(`Untagged versions: ${untaggedVersions.length}`);
+            core.info(`Other versions: ${otherVersions.length}`);
+
+            // Group nightlies by minor version and keep only the most recent N
+            const nightlyByMinor = new Map();
+            for (const nightly of nightlyVersions) {
+              if (!nightlyByMinor.has(nightly.minor)) {
+                nightlyByMinor.set(nightly.minor, []);
+              }
+              nightlyByMinor.get(nightly.minor).push(nightly);
+            }
+
+            const nightliesToDelete = [];
+            for (const [minor, nightlies] of nightlyByMinor) {
+              // Sort by creation date, newest first
+              nightlies.sort((a, b) => b.createdAt - a.createdAt);
+
+              core.info(`Minor ${minor}: ${nightlies.length} nightly images`);
+
+              // Keep the first N, delete the rest
+              for (let i = keepLast; i < nightlies.length; i++) {
+                nightliesToDelete.push(nightlies[i]);
+              }
+            }
+
+            core.info(`Nightly images to delete: ${nightliesToDelete.length}`);
+
+            // Also delete untagged versions (usually leftover manifests)
+            const toDelete = [
+              ...nightliesToDelete.map(n => ({ version: n.version, reason: `Old nightly: ${n.tag}` })),
+              ...untaggedVersions.map(v => ({ version: v, reason: 'Untagged' }))
+            ];
+
+            core.info(`Total versions to delete: ${toDelete.length}`);
+
+            if (toDelete.length === 0) {
+              core.info('Nothing to delete.');
+              return;
+            }
+
+            // Delete versions
+            for (const { version, reason } of toDelete) {
+              const tags = version.metadata?.container?.tags || [];
+              const tagStr = tags.length > 0 ? tags.join(', ') : '(untagged)';
+
+              if (dryRun) {
+                core.info(`[DRY RUN] Would delete: ${version.id} - ${tagStr} (${reason})`);
+              } else {
+                try {
+                  const deleteParams = {
+                    package_type: 'container',
+                    package_name: packageName,
+                    package_version_id: version.id
+                  };
+                  if (ownerType === 'Organization') {
+                    deleteParams.org = context.repo.owner;
+                    await github.rest.packages.deletePackageVersionForOrg(deleteParams);
+                  } else {
+                    deleteParams.username = context.repo.owner;
+                    await github.rest.packages.deletePackageVersionForUser(deleteParams);
+                  }
+                  core.info(`Deleted: ${version.id} - ${tagStr} (${reason})`);
+                } catch (error) {
+                  core.warning(`Failed to delete ${version.id}: ${error.message}`);
+                }
+              }
+            }
+
+            core.info('Cleanup complete.');
