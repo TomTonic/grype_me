@@ -37,7 +37,7 @@ jobs:
         with:
           version: latest
           args: --timeout=5m
-          working-directory: cmd/grype_me
+          working-directory: cmd/grypeme
 
       - name: Set up Python for YAML linting
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -79,7 +79,7 @@ jobs:
         run: grype db update
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./cmd/grype_me/...
+        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./cmd/grypeme/...
 
       - name: Display test coverage
         run: go tool cover -func=coverage.txt
@@ -112,7 +112,7 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Build application
-        run: go build -v -o grype-action ./cmd/grype_me
+        run: go build -v -o grype-action ./cmd/grypeme
 
       - name: Verify binary
         run: ./grype-action --help || echo "Binary built successfully"

@@ -17,7 +17,7 @@ RUN go mod download
 COPY cmd/ ./cmd/
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o grype-action ./cmd/grype_me
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o grype-action ./cmd/grypeme
 
 # Installer stage: fetch grype with signature verification (cosign present only here)
 FROM alpine:${ALPINE_VERSION} AS grype-installer
