@@ -112,7 +112,7 @@ outputs:
       shields.io badge URL showing vulnerability summary.
       Color indicates severity: green (none), yellowgreen (low),
       yellow (medium), orange (high), red (critical).
-      Use in README: ![Vulnerabilities](${{ steps.grype.outputs.badge-url }})
+      Use in README: ![Vulnerabilities](<badge-url>)
 
 runs:
   using: 'docker'
