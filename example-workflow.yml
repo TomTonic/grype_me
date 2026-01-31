@@ -95,7 +95,8 @@ jobs:
       #         owner: context.repo.owner,
       #         repo: context.repo.repo,
       #         title: '🚨 Critical vulnerabilities detected',
-      #         body: `Found ${{ steps.grype-scan.outputs.critical }} critical CVEs.\n\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+      #         body: `Found ${{ steps.grype-scan.outputs.critical }} critical CVEs.\n\n` +
+      #           `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
       #         labels: ['security', 'critical']
       #       });
 
