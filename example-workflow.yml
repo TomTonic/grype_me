@@ -10,8 +10,8 @@ name: Vulnerability Scan
   pull_request:
     branches: [main]
   schedule:
-    # Run weekly on Mondays at 9:00 UTC
-    - cron: '0 9 * * 1'
+    # Run nightly at 2:00 UTC to check for new vulnerabilities
+    - cron: '0 2 * * *'
   workflow_dispatch:
 
 jobs:
@@ -23,13 +23,32 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Required for latest_release mode to have access to tags
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Run Grype vulnerability scanner
         id: grype-scan
         uses: TomTonic/grype_me@v1
         with:
-          scan: 'head'
+          # Scan modes (pick one):
+          # - 'latest_release': Scan highest semver tag (great for nightly scans)
+          # - 'head': Scan current working directory (for PR checks)
+          # - 'v1.2.3': Scan a specific tag
+          scan: 'head'  # Use 'latest_release' for scheduled scans
+          
+          # Optional: Fail build on vulnerabilities
+          fail-build: false  # Set to 'true' to fail on vulnerabilities
+          severity-cutoff: 'high'  # negligible, low, medium, high, critical
+          
+          # Optional: Output configuration
           output-file: 'grype-results.json'
+          output-format: 'json'  # json, sarif, table, cyclonedx-json, spdx-json
+          
+          # Optional: Filter results
+          only-fixed: false  # Set to 'true' to only show fixable vulnerabilities
+          
           variable-prefix: 'GRYPE_'
 
       - name: Display scan summary
@@ -62,11 +81,25 @@ jobs:
           path: grype-results.json
           retention-days: 30
 
-      # Optional: Fail build if critical vulnerabilities found
-      # Uncomment the following step to enable this behavior
-      # - name: Check for critical vulnerabilities
-      #   if: steps.grype-scan.outputs.critical != '0'
-      #   run: |
-      #     crit="${{ steps.grype-scan.outputs.critical }}"
-      #     echo "::error::Found $crit critical vulnerabilities!"
-      #     exit 1
+# Alternative examples:
+#
+# Scan a container image after building:
+# - name: Scan Docker image
+#   uses: TomTonic/grype_me@v1
+#   with:
+#     image: 'myapp:${{ github.sha }}'
+#     fail-build: true
+#     severity-cutoff: 'high'
+#
+# Scan an SBOM file:
+# - name: Scan SBOM
+#   uses: TomTonic/grype_me@v1
+#   with:
+#     sbom: 'sbom.json'
+#     only-fixed: true
+#
+# Scan a specific directory:
+# - name: Scan build output
+#   uses: TomTonic/grype_me@v1
+#   with:
+#     path: './dist'

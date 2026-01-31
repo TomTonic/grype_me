@@ -1,35 +1,69 @@
 # grype_me
 
-A lean GitHub Action to scan your repository for vulnerabilities using [Anchore Grype](https://github.com/anchore/grype).
+A lean GitHub Action to scan for vulnerabilities using [Anchore Grype](https://github.com/anchore/grype).
 
 ## Features
 
-- 🔍 Scans your repository for vulnerabilities using the latest version of Grype
+- 🔍 Scans for vulnerabilities using the latest version of Grype
+- 📦 **Multiple scan modes**: repositories, container images, directories, or SBOMs
+- 🎯 **Latest release scanning**: Perfect for nightly scans of your published releases
 - 📊 Provides detailed vulnerability counts by severity (Critical, High, Medium, Low)
-- 🎯 Outputs results as JSON file (optional)
-- 🔧 Configurable environment variable prefix
+- 🚨 **Fail build** on vulnerabilities at or above a severity threshold
+- 🔧 Filter to show only vulnerabilities with available fixes
+- 📁 Outputs results as JSON or SARIF file (optional)
 - 🚀 Uses Go for fast execution
-- 📦 Containerized for consistent execution across environments
-- ⏰ Supports scheduled scans (e.g., weekly security checks)
+- ⏰ Supports scheduled scans (e.g., nightly security checks)
 
 ## How It Works
 
-This action runs inside a Docker container with Grype pre-installed. When executed:
+This action runs inside a Docker container with Grype pre-installed. It supports multiple scan modes:
 
-1. The action container mounts your repository at `/github/workspace`
-2. Grype scans the repository for known vulnerabilities in dependencies
-3. Results are parsed and categorized by severity
-4. Vulnerability counts are exported as action outputs and environment variables
+1. **Repository mode** (`scan` input): Scan your repository's source code
+   - `latest_release`: Checkout the highest semver tag and scan it (great for nightly scans)
+   - `head`: Scan the current working directory as-is
+   - `<tag/branch>`: Checkout a specific tag or branch and scan it
+
+2. **Artifact mode** (mutually exclusive inputs): Scan pre-built artifacts
+   - `image`: Scan a container image (e.g., `alpine:latest`, `myregistry/app:v1.0`)
+   - `path`: Scan a directory or file path
+   - `sbom`: Scan a Software Bill of Materials file
 
 ## Usage
 
 > **Quick Start**: Copy [`example-workflow.yml`](example-workflow.yml) to `.github/workflows/` in your repository for a ready-to-use vulnerability scanning setup.
 
-### Basic Usage
+### Repository Scanning (Default)
+
+Scan your repository's latest release (ideal for nightly vulnerability checks):
 
 ```yaml
-name: Security Scan
-on: [push, pull_request]
+name: Nightly Security Scan
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Every day at 2am
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      
+      - name: Scan latest release for vulnerabilities
+        uses: TomTonic/grype_me@v1
+        with:
+          scan: 'latest_release'  # Scans highest semver tag
+          fail-build: true
+          severity-cutoff: 'high'
+```
+
+Scan the current checkout (for CI on PRs):
+
+```yaml
+name: PR Security Check
+on: [pull_request]
 
 jobs:
   scan:
@@ -37,11 +71,52 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Run Grype vulnerability scanner
+      - name: Scan for vulnerabilities
         uses: TomTonic/grype_me@v1
+        with:
+          scan: 'head'  # Scans current working directory
+          fail-build: true
+          severity-cutoff: 'critical'
 ```
 
-### Advanced Usage
+### Container Image Scanning
+
+Scan a container image after building it:
+
+```yaml
+name: Build and Scan
+on: [push]
+
+jobs:
+  build-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build Docker image
+        run: docker build -t myapp:${{ github.sha }} .
+      
+      - name: Scan image for vulnerabilities
+        uses: TomTonic/grype_me@v1
+        with:
+          image: 'myapp:${{ github.sha }}'
+          fail-build: true
+          severity-cutoff: 'high'
+```
+
+### SBOM Scanning
+
+Scan an existing Software Bill of Materials:
+
+```yaml
+- name: Scan SBOM for vulnerabilities
+  uses: TomTonic/grype_me@v1
+  with:
+    sbom: 'sbom.json'
+    only-fixed: true  # Only show vulnerabilities with fixes available
+```
+
+### Full Example with All Options
 
 ```yaml
 name: Security Scan with Options
@@ -52,13 +127,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       
       - name: Run Grype vulnerability scanner
         id: grype-scan
         uses: TomTonic/grype_me@v1
         with:
-          scan: 'head'
+          scan: 'latest_release'
           output-file: 'grype-results.json'
+          output-format: 'json'
+          fail-build: true
+          severity-cutoff: 'medium'
+          only-fixed: false
           variable-prefix: 'SCAN_'
       
       - name: Display scan results
@@ -77,16 +159,31 @@ jobs:
         with:
           name: grype-scan-results
           path: grype-results.json
-```
 
 ## Inputs
 
+### Scan Mode Inputs
+
+You can use **either** the `scan` input **or** one of `image`/`path`/`sbom` - they are mutually exclusive.
+
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `scan` | What to scan: `latest_release` (highest stable version tag, sorted by semantic version - pre-release tags like v1.0.0-beta are skipped), `head` (default branch), or a specific tag/branch name. **Note:** `latest_release` requires at least one tag in the repository and uses local git tags (not the GitHub Releases API). Tags not following semantic versioning may not sort as expected. Use `head` if your repository has no tags. | No | `latest_release` |
-| `output-file` | Path to save JSON scan results | No | `` (no file saved) |
+| `scan` | Repository scan mode: `latest_release` (highest stable semver tag), `head` (current directory), or a specific tag/branch name. | No | `latest_release` |
+| `image` | Container image to scan (e.g., `alpine:latest`, `myregistry/app:v1.0`). Cannot be used with `scan`, `path`, or `sbom`. | No | |
+| `path` | Directory or file path to scan. Cannot be used with `scan`, `image`, or `sbom`. | No | |
+| `sbom` | SBOM file to scan (supports Syft, CycloneDX, SPDX formats). Cannot be used with `scan`, `image`, or `path`. | No | |
+
+### Configuration Inputs
+
+| Input | Description | Required | Default |
+|-------|-------------|----------|---------|
+| `fail-build` | Fail the workflow if vulnerabilities are found at or above `severity-cutoff` | No | `false` |
+| `severity-cutoff` | Minimum severity to trigger build failure: `negligible`, `low`, `medium`, `high`, `critical` | No | `medium` |
+| `output-file` | Path to save scan results | No | (no file saved) |
+| `output-format` | Output format: `json`, `sarif`, `table`, `cyclonedx-json`, `spdx-json` | No | `json` |
+| `only-fixed` | Only report vulnerabilities with a fix available | No | `false` |
 | `variable-prefix` | Prefix for environment variable names | No | `GRYPE_` |
-| `debug` | Print INPUT_/GITHUB_ environment variables when `true` (warning: may expose sensitive data in logs) | No | `false` |
+| `debug` | Print INPUT_/GITHUB_ environment variables (warning: may expose sensitive data) | No | `false` |
 
 ## Outputs
 
@@ -99,7 +196,7 @@ jobs:
 | `high` | Number of high severity vulnerabilities |
 | `medium` | Number of medium severity vulnerabilities |
 | `low` | Number of low severity vulnerabilities |
-| `json-output` | Path to the JSON output file (if `output-file` was specified) |
+| `json-output` | Path to the output file (if `output-file` was specified) |
 
 ## Environment Variables
 
@@ -113,34 +210,41 @@ In addition to the outputs, the action sets environment variables with a configu
 - `{prefix}MEDIUM` - Medium severity count
 - `{prefix}LOW` - Low severity count
 
-## Example: Fail Build on Critical Vulnerabilities
+## Important Notes
 
-```yaml
-- name: Run Grype vulnerability scanner
-  id: grype-scan
-  uses: TomTonic/grype_me@v1
+### For `latest_release` mode
 
-- name: Check for critical vulnerabilities
-  run: |
-    if [ "${{ steps.grype-scan.outputs.critical }}" -gt "0" ]; then
-      echo "Found ${{ steps.grype-scan.outputs.critical }} critical vulnerabilities!"
-      exit 1
-    fi
-```
+- Requires at least one semver tag in the repository (e.g., `v1.0.0`)
+- Pre-release tags (e.g., `v1.0.0-beta`) are automatically skipped
+- Use `fetch-depth: 0` and `fetch-tags: true` in checkout to ensure tags are available
+- If no tags exist, use `scan: 'head'` instead
+
+### For `image` mode
+
+- The image must be locally available or pullable
+- Works with any registry (Docker Hub, GHCR, ECR, etc.)
+- Build your image before scanning in the workflow
 
 ## Migration Notes
 
 ### Upgrading from versions with `repository` and `branch` parameters
 
-If you were previously using the `repository` and `branch` input parameters, these have been replaced with a unified `scan` parameter. The new `scan` parameter defaults to `latest_release`, which scans the highest semantic version tag in your repository.
+The `repository` and `branch` input parameters have been replaced with a unified `scan` parameter. The default behavior now scans `latest_release` (highest semver tag).
 
-**Breaking change:** The default behavior has changed from scanning the current checkout to scanning the latest release tag. To maintain the previous behavior (scanning the current checkout), explicitly set `scan: 'head'`:
+**Breaking change:** To maintain the previous behavior (scanning current checkout), explicitly set:
 
 ```yaml
 - uses: TomTonic/grype_me@v1
   with:
-    scan: 'head'  # Scan the default branch (previous default behavior)
+    scan: 'head'
 ```
+
+### New features in v2
+
+- **Artifact scanning**: Use `image`, `path`, or `sbom` inputs to scan pre-built artifacts
+- **Build failure**: Use `fail-build: true` with `severity-cutoff` to fail on vulnerabilities
+- **Fixed-only filter**: Use `only-fixed: true` to only show fixable vulnerabilities
+- **Output formats**: Support for SARIF, CycloneDX, SPDX in addition to JSON
 
 ## License
 
