@@ -186,9 +186,34 @@ The action generates a dynamic [shields.io](https://shields.io) badge URL that y
 | ![orange](https://img.shields.io/badge/vulnerabilities-1%20high-orange) | High severity |
 | ![critical](https://img.shields.io/badge/vulnerabilities-2%20critical-critical) | Critical severity |
 
-### Setting Up the Badge
+### Badge Output
 
-1. **Create a workflow** that runs nightly and updates a gist with the badge URL:
+The `badge-url` output contains a complete shields.io URL. Example outputs:
+
+- No vulnerabilities: `https://img.shields.io/badge/vulnerabilities-none-brightgreen`
+- With findings: `https://img.shields.io/badge/vulnerabilities-2%20critical%20%7C%201%20high-critical`
+
+### Using the Badge in Your README
+
+The challenge: Your README needs a static badge URL, but scan results change with each run. There are two approaches:
+
+#### Option A: Gist-Based Badge (Recommended)
+
+This approach stores the badge data in a GitHub Gist, which your README references. The badge updates automatically when the gist is updated.
+
+**Step 1:** Create a GitHub Gist
+
+1. Go to [gist.github.com](https://gist.github.com) and create a new gist
+2. Name the file `grype-badge.json` with any initial content (e.g., `{}`)
+3. Save and copy the Gist ID from the URL (e.g., `https://gist.github.com/youruser/abc123def456` → ID is `abc123def456`)
+
+**Step 2:** Create a Personal Access Token
+
+1. Go to [GitHub Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens)
+2. Create a token with `gist` scope
+3. Add it as a repository secret named `GIST_TOKEN`
+
+**Step 3:** Add a workflow that updates the gist:
 
 ```yaml
 name: Security Badge
@@ -209,13 +234,12 @@ jobs:
         uses: TomTonic/grype_me@v1
         with:
           scan: 'latest_release'
-          badge-label: 'vulnerabilities'
 
       - name: Update Gist with badge data
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
-          gistID: YOUR_GIST_ID
+          gistID: YOUR_GIST_ID  # Replace with your Gist ID
           filename: grype-badge.json
           label: vulnerabilities
           message: ${{ steps.grype.outputs.cve-count }} found
@@ -224,28 +248,30 @@ jobs:
           minColorRange: 0
 ```
 
-2. **Alternative: Direct badge URL** - Use the `badge-url` output directly (best for dynamic scenarios):
-
-```yaml
-- name: Scan and display badge
-  id: grype
-  uses: TomTonic/grype_me@v1
-  with:
-    scan: 'latest_release'
-
-- name: Show badge URL
-  run: |
-    echo "Add this to your README:"
-    echo "![Vulnerabilities](${{ steps.grype.outputs.badge-url }})"
-```
-
-3. **In your README**, add the badge using the shields.io endpoint badge pointing to your gist:
+**Step 4:** Add the badge to your README:
 
 ```markdown
 ![Vulnerabilities](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/YOUR_USER/YOUR_GIST_ID/raw/grype-badge.json)
 ```
 
-> 💡 **Why use a gist?** The direct badge URL changes with each scan result. By storing the badge data in a gist, your README always shows the latest scan result without needing to update the README itself. This approach has **no storage costs** for the user.
+#### Option B: Display in Workflow Summary
+
+If you don't need the badge in your README, you can display it in the GitHub Actions workflow summary:
+
+```yaml
+- name: Run Grype scan
+  id: grype
+  uses: TomTonic/grype_me@v1
+  with:
+    scan: 'latest_release'
+
+- name: Add badge to summary
+  run: |
+    echo "## Vulnerability Scan" >> $GITHUB_STEP_SUMMARY
+    echo "![Badge](${{ steps.grype.outputs.badge-url }})" >> $GITHUB_STEP_SUMMARY
+```
+
+This displays the badge directly in the workflow run summary without needing a gist.
 
 ## Alerting Examples
 
