@@ -2,12 +2,72 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// checkoutTestDefaultBranch attempts to checkout the default branch (master or main)
+// in the current directory. It returns the name of the branch that was checked out,
+// or an error if neither branch exists.
+func checkoutTestDefaultBranch(t *testing.T) string {
+	t.Helper()
+
+	// Try master first
+	if err := exec.Command("git", "checkout", "master").Run(); err == nil {
+		return "master"
+	}
+
+	// Try main
+	if err := exec.Command("git", "checkout", "main").Run(); err == nil {
+		return "main"
+	}
+
+	t.Fatalf("failed to checkout default branch: neither 'master' nor 'main' exists")
+	return ""
+}
+
+// checkoutTestDefaultBranchInDir attempts to checkout the default branch in the specified directory.
+// Returns the name of the branch that was checked out, or an error if neither branch exists.
+func checkoutTestDefaultBranchInDir(t *testing.T, dir string) string {
+	t.Helper()
+
+	// Try master first
+	cmd := exec.Command("git", "checkout", "master")
+	cmd.Dir = dir
+	if err := cmd.Run(); err == nil {
+		return "master"
+	}
+
+	// Try main
+	cmd = exec.Command("git", "checkout", "main")
+	cmd.Dir = dir
+	if err := cmd.Run(); err == nil {
+		return "main"
+	}
+
+	t.Fatalf("failed to checkout default branch in %s: neither 'master' nor 'main' exists", dir)
+	return ""
+}
+
+// getTestDefaultBranchName returns the name of the default branch (master or main)
+// by checking which one exists. Returns an error if neither exists.
+func getTestDefaultBranchName() (string, error) {
+	// Try to verify master exists
+	if err := exec.Command("git", "rev-parse", "--verify", "refs/heads/master").Run(); err == nil {
+		return "master", nil
+	}
+
+	// Try to verify main exists
+	if err := exec.Command("git", "rev-parse", "--verify", "refs/heads/main").Run(); err == nil {
+		return "main", nil
+	}
+
+	return "", fmt.Errorf("neither 'master' nor 'main' branch exists")
+}
 
 // TestGetEnv tests the getEnv function
 func TestGetEnv(t *testing.T) {
@@ -1129,9 +1189,8 @@ func TestHandleScanTarget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Reset to main/master before each test
-			_ = exec.Command("git", "checkout", "master").Run()
-			_ = exec.Command("git", "checkout", "main").Run()
+			// Reset to default branch before each test
+			checkoutTestDefaultBranch(t)
 
 			err := handleScanTarget(tt.scan)
 			if (err != nil) != tt.wantErr {
@@ -1567,9 +1626,8 @@ func TestScanBranch(t *testing.T) {
 		t.Fatalf("Failed to git commit: %v", err)
 	}
 
-	// Go back to main/master
-	_ = exec.Command("git", "checkout", "master").Run()
-	_ = exec.Command("git", "checkout", "main").Run()
+	// Go back to default branch
+	checkoutTestDefaultBranchInDir(t, tmpDir)
 
 	// Save original directory and change to temp dir
 	origDir, err := os.Getwd()
