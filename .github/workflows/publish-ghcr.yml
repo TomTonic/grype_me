@@ -5,7 +5,7 @@ name: Publish GHCR Image
   release:
     types: [published]
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '53 6 * * *' # daily 06:53 UTC - after Grype DB update (approx 06:15 UTC)
   workflow_dispatch:
 
 permissions:
