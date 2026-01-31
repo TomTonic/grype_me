@@ -280,7 +280,9 @@ func getDefaultBranch() (string, error) {
 	return "", fmt.Errorf("could not determine default branch")
 }
 
-// getLatestReleaseTag returns the latest release tag in the repository
+// getLatestReleaseTag returns the latest release tag in the repository.
+// It uses semantic version sorting and filters out pre-release tags (e.g., v1.0.0-beta.1).
+// Note: "latest" means the highest version number, not the most recently created tag.
 func getLatestReleaseTag() (string, error) {
 	// Check if git is available
 	if _, err := exec.LookPath("git"); err != nil {
@@ -300,8 +302,42 @@ func getLatestReleaseTag() (string, error) {
 		return "", fmt.Errorf("no tags found in repository")
 	}
 
-	// Return the first (latest) tag
+	// Filter out pre-release tags (those containing '-' after a version pattern)
+	// Pre-release examples: v1.0.0-alpha, v2.0.0-beta.1, v1.0.0-rc1
+	for _, tag := range tags {
+		if !isPreReleaseTag(tag) {
+			return tag, nil
+		}
+	}
+
+	// If all tags are pre-release, return the highest one with a warning
+	fmt.Printf("Warning: All tags appear to be pre-release versions. Using highest version: %s\n", tags[0])
 	return tags[0], nil
+}
+
+// isPreReleaseTag checks if a tag appears to be a pre-release version.
+// It looks for patterns like v1.0.0-alpha, v1.0.0-beta.1, v1.0.0-rc1, etc.
+func isPreReleaseTag(tag string) bool {
+	// Remove leading 'v' or 'V' if present
+	normalized := strings.TrimPrefix(strings.TrimPrefix(tag, "v"), "V")
+
+	// Look for a hyphen that follows a version number pattern
+	// This matches: 1.0.0-alpha, 1.0-beta, 1-rc1, etc.
+	parts := strings.SplitN(normalized, "-", 2)
+	if len(parts) < 2 {
+		return false // No hyphen, not a pre-release
+	}
+
+	// Check if the first part looks like a version number (digits and dots)
+	versionPart := parts[0]
+	for _, c := range versionPart {
+		if c != '.' && (c < '0' || c > '9') {
+			return false // Contains non-version characters before hyphen
+		}
+	}
+
+	// If we have digits/dots followed by a hyphen and more content, it's pre-release
+	return len(versionPart) > 0 && len(parts[1]) > 0
 }
 
 // validateRefName checks if a git reference name is valid and safe to use.
