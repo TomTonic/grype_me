@@ -283,8 +283,62 @@ func getLatestReleaseTag() (string, error) {
 	return tags[0], nil
 }
 
+// validateRefName checks if a git reference name is valid and safe to use.
+// It rejects refs containing control characters, null bytes, or other suspicious patterns.
+func validateRefName(ref string) error {
+	if ref == "" {
+		return fmt.Errorf("ref name cannot be empty")
+	}
+
+	// Check for control characters (ASCII 0-31 and 127)
+	for i, c := range ref {
+		if c < 32 || c == 127 {
+			return fmt.Errorf("ref name contains invalid control character at position %d", i)
+		}
+	}
+
+	// Check for null bytes (additional explicit check)
+	if strings.Contains(ref, "\x00") {
+		return fmt.Errorf("ref name contains null byte")
+	}
+
+	// Check for suspicious patterns that might indicate injection attempts
+	suspiciousPatterns := []string{
+		"..", // Path traversal
+		"~",  // Git reflog syntax
+		"^",  // Git parent syntax (could be valid but suspicious in user input)
+		":",  // Git revision syntax
+		"?",  // Wildcard
+		"*",  // Wildcard
+		"[",  // Wildcard/range
+		"\\", // Escape character
+		" ",  // Spaces (not valid in ref names)
+	}
+
+	for _, pattern := range suspiciousPatterns {
+		if strings.Contains(ref, pattern) {
+			return fmt.Errorf("ref name contains suspicious pattern %q", pattern)
+		}
+	}
+
+	// Git ref names cannot start or end with a dot or slash
+	if strings.HasPrefix(ref, ".") || strings.HasSuffix(ref, ".") {
+		return fmt.Errorf("ref name cannot start or end with a dot")
+	}
+	if strings.HasPrefix(ref, "/") || strings.HasSuffix(ref, "/") {
+		return fmt.Errorf("ref name cannot start or end with a slash")
+	}
+
+	return nil
+}
+
 // checkoutRef checks out a specific git reference (branch, tag, or commit)
 func checkoutRef(ref string) error {
+	// Validate the ref name before using it
+	if err := validateRefName(ref); err != nil {
+		return fmt.Errorf("invalid ref name %q: %w", ref, err)
+	}
+
 	// Check if git is available
 	if _, err := exec.LookPath("git"); err != nil {
 		return fmt.Errorf("git not found: %w", err)

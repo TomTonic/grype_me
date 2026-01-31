@@ -69,6 +69,155 @@ func getTestDefaultBranchName() (string, error) {
 	return "", fmt.Errorf("neither 'master' nor 'main' branch exists")
 }
 
+// TestValidateRefName tests the validateRefName function
+func TestValidateRefName(t *testing.T) {
+	tests := []struct {
+		name    string
+		ref     string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "valid simple ref",
+			ref:     "main",
+			wantErr: false,
+		},
+		{
+			name:    "valid tag with version",
+			ref:     "v1.0.0",
+			wantErr: false,
+		},
+		{
+			name:    "valid branch with slash",
+			ref:     "feature/new-feature",
+			wantErr: false,
+		},
+		{
+			name:    "empty ref",
+			ref:     "",
+			wantErr: true,
+			errMsg:  "cannot be empty",
+		},
+		{
+			name:    "ref with newline",
+			ref:     "main\nmalicious",
+			wantErr: true,
+			errMsg:  "control character",
+		},
+		{
+			name:    "ref with null byte",
+			ref:     "main\x00malicious",
+			wantErr: true,
+			errMsg:  "control character",
+		},
+		{
+			name:    "ref with tab",
+			ref:     "main\tmalicious",
+			wantErr: true,
+			errMsg:  "control character",
+		},
+		{
+			name:    "ref with carriage return",
+			ref:     "main\rmalicious",
+			wantErr: true,
+			errMsg:  "control character",
+		},
+		{
+			name:    "ref with path traversal",
+			ref:     "../etc/passwd",
+			wantErr: true,
+			errMsg:  "suspicious pattern",
+		},
+		{
+			name:    "ref with tilde",
+			ref:     "HEAD~1",
+			wantErr: true,
+			errMsg:  "suspicious pattern",
+		},
+		{
+			name:    "ref with caret",
+			ref:     "HEAD^",
+			wantErr: true,
+			errMsg:  "suspicious pattern",
+		},
+		{
+			name:    "ref with colon",
+			ref:     "branch:file",
+			wantErr: true,
+			errMsg:  "suspicious pattern",
+		},
+		{
+			name:    "ref with space",
+			ref:     "main branch",
+			wantErr: true,
+			errMsg:  "suspicious pattern",
+		},
+		{
+			name:    "ref with wildcard asterisk",
+			ref:     "feature*",
+			wantErr: true,
+			errMsg:  "suspicious pattern",
+		},
+		{
+			name:    "ref with wildcard question",
+			ref:     "feature?",
+			wantErr: true,
+			errMsg:  "suspicious pattern",
+		},
+		{
+			name:    "ref starting with dot",
+			ref:     ".hidden",
+			wantErr: true,
+			errMsg:  "cannot start or end with a dot",
+		},
+		{
+			name:    "ref ending with dot",
+			ref:     "branch.",
+			wantErr: true,
+			errMsg:  "cannot start or end with a dot",
+		},
+		{
+			name:    "ref starting with slash",
+			ref:     "/branch",
+			wantErr: true,
+			errMsg:  "cannot start or end with a slash",
+		},
+		{
+			name:    "ref ending with slash",
+			ref:     "branch/",
+			wantErr: true,
+			errMsg:  "cannot start or end with a slash",
+		},
+		{
+			name:    "ref with backslash",
+			ref:     "branch\\name",
+			wantErr: true,
+			errMsg:  "suspicious pattern",
+		},
+		{
+			name:    "ref with bracket",
+			ref:     "branch[0]",
+			wantErr: true,
+			errMsg:  "suspicious pattern",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateRefName(tt.ref)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateRefName(%q) error = %v, wantErr %v", tt.ref, err, tt.wantErr)
+				return
+			}
+			if tt.wantErr && tt.errMsg != "" && err != nil {
+				if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("validateRefName(%q) error = %v, want error containing %q", tt.ref, err, tt.errMsg)
+				}
+			}
+		})
+	}
+}
+
 // TestGetEnv tests the getEnv function
 func TestGetEnv(t *testing.T) {
 	tests := []struct {
