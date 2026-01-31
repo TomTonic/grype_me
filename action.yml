@@ -9,12 +9,12 @@ inputs:
   scan:
     description: >-
       Specifies what to scan. Can be:
-      - 'head': Scan the head of the main/default branch (default)
-      - 'latest_release': Scan the latest published release
+      - 'latest_release': Scan the latest published release (default)
+      - 'head': Scan the head of the main/default branch
       - A tag name: Scan a specific tag in the repository
       - A branch name: Scan a specific branch in the repository
     required: false
-    default: 'head'
+    default: 'latest_release'
   output-file:
     description: 'Path to save JSON scan results (optional)'
     required: false
