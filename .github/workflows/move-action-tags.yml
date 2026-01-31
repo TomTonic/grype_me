@@ -89,7 +89,8 @@ jobs:
                 });
                 core.info(`Updated ${refName} -> ${sha}`);
               } catch (error) {
-                if (error.status !== 404) throw error;
+                // GitHub returns 422 (Reference does not exist) when attempting to update a ref that doesn't exist.
+                if (error.status !== 404 && error.status !== 422) throw error;
                 await github.rest.git.createRef({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
