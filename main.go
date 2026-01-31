@@ -1,72 +1,28 @@
 // Package main implements a GitHub Action for scanning container images, directories,
-// SBOMs, and git refs with Anchore Grype vulnerability scanner.
+// SBOMs, and Git refs with Anchore Grype vulnerability scanner.
+//
+// The action supports multiple scan modes:
+//   - Repository scanning: Scan the latest release, HEAD, or a specific tag/branch
+//   - Image scanning: Scan a container image from a registry
+//   - Path scanning: Scan a local directory or file
+//   - SBOM scanning: Scan an existing SBOM file
+//
+// Results are provided as GitHub Actions outputs and can optionally be saved to a JSON file.
+// A shields.io badge URL is generated for easy integration into README files.
+//
+// File organization:
+//   - main.go: Entry point and orchestration
+//   - types.go: Data structures (GrypeOutput, Config, VulnerabilityStats)
+//   - config.go: Configuration loading and environment variable handling
+//   - scanner.go: Grype scan execution and result parsing
+//   - git.go: Git operations (worktrees, tags, ref handling)
+//   - output.go: GitHub Actions outputs, file handling, badge generation
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"sort"
-	"strings"
 )
-
-// GrypeMatch represents a single vulnerability match
-type GrypeMatch struct {
-	Vulnerability struct {
-		ID       string `json:"id"`
-		Severity string `json:"severity"`
-	} `json:"vulnerability"`
-}
-
-// GrypeOutput represents the JSON output from grype
-type GrypeOutput struct {
-	Matches    []GrypeMatch `json:"matches"`
-	Descriptor struct {
-		Version string `json:"version"`
-		DB      struct {
-			// Older grype outputs exposed the built timestamp at descriptor.db.built.
-			Built string `json:"built,omitempty"`
-			// Newer grype outputs (e.g. 0.106+) expose it at descriptor.db.status.built.
-			Status struct {
-				Built string `json:"built,omitempty"`
-			} `json:"status,omitempty"`
-		} `json:"db"`
-	} `json:"descriptor"`
-}
-
-func (o *GrypeOutput) DBBuilt() string {
-	if o == nil {
-		return ""
-	}
-	if built := o.Descriptor.DB.Status.Built; built != "" {
-		return built
-	}
-	return o.Descriptor.DB.Built
-}
-
-// Config holds all action inputs
-type Config struct {
-	// Scan modes (mutually exclusive)
-	Scan  string // Repository-based: latest_release, head, or tag/branch name
-	Image string // Container image to scan
-	Path  string // Directory or file to scan
-	SBOM  string // SBOM file to scan
-
-	// Common options
-	FailBuild      bool
-	SeverityCutoff string
-	OutputFile     string
-	VariablePrefix string
-	OnlyFixed      bool
-	DBUpdate       bool
-	Debug          bool
-
-	// Badge options
-	BadgeLabel string
-}
 
 func main() {
 	if err := run(); err != nil {
@@ -75,6 +31,8 @@ func main() {
 	}
 }
 
+// run is the main entry point that orchestrates the vulnerability scanning workflow.
+// It loads configuration, determines the scan target, executes the scan, and processes results.
 func run() error {
 	config := loadConfig()
 
@@ -82,15 +40,15 @@ func run() error {
 		printDebugEnv()
 	}
 
-	// Determine scan target
-	target, scanDir, err := determineScanTarget(config)
+	// Determine what to scan based on configuration
+	target, tempDir, err := determineScanTarget(config)
 	if err != nil {
 		return fmt.Errorf("failed to determine scan target: %w", err)
 	}
 
-	// Clean up temporary worktree if one was created
-	if scanDir != "" {
-		defer cleanupWorktree(scanDir)
+	// Clean up temporary worktree if one was created (for repository scanning)
+	if tempDir != "" {
+		defer cleanupWorktree(tempDir)
 	}
 
 	fmt.Printf("Grype scan target: %s\n", target)
@@ -102,708 +60,78 @@ func run() error {
 		}
 	}
 
-	// Create a temporary file for grype output
+	// Execute Grype scan and get results
+	grypeOutput, err := executeScan(config, target)
+	if err != nil {
+		return err
+	}
+
+	// Process and output results
+	return processResults(config, grypeOutput)
+}
+
+// executeScan runs the Grype vulnerability scan and parses the output.
+// It creates a temporary file for Grype's JSON output, which is cleaned up after parsing.
+func executeScan(config Config, target string) (*GrypeOutput, error) {
+	// Create a temporary file for Grype output
 	tmpFile, err := os.CreateTemp("", "grype-output-*.json")
 	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpFilePath := tmpFile.Name()
+
 	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("failed to close temp file: %w", err)
+		return nil, fmt.Errorf("failed to close temp file: %w", err)
 	}
 	defer func() { _ = os.Remove(tmpFilePath) }()
 
-	// Run grype scan
+	// Run the Grype scan
 	if err := runGrypeScan(config, target, tmpFilePath); err != nil {
-		return fmt.Errorf("grype scan failed: %w", err)
+		return nil, fmt.Errorf("grype scan failed: %w", err)
 	}
 
-	// Parse grype output
+	// Parse the scan output
 	output, err := parseGrypeOutput(tmpFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to parse grype output: %w", err)
+		return nil, fmt.Errorf("failed to parse grype output: %w", err)
 	}
 
-	// Calculate statistics
-	stats := calculateStats(output)
-
-	// Copy output file to desired location if specified
-	jsonOutputPath := ""
+	// Copy output file to user-specified location if requested
 	if config.OutputFile != "" {
-		jsonOutputPath, err = copyOutputFile(tmpFilePath, config.OutputFile)
+		jsonOutputPath, err := copyOutputFile(tmpFilePath, config.OutputFile)
 		if err != nil {
-			return fmt.Errorf("failed to copy output file: %w", err)
+			return nil, fmt.Errorf("failed to copy output file: %w", err)
 		}
 		fmt.Printf("Scan results saved to: %s\n", jsonOutputPath)
 	}
 
-	// Set GitHub Actions outputs
+	return output, nil
+}
+
+// processResults calculates statistics, sets outputs, prints summary, and checks fail conditions.
+func processResults(config Config, output *GrypeOutput) error {
+	stats := calculateStats(output)
+
+	// Determine JSON output path for GitHub Actions outputs
+	jsonOutputPath := ""
+	if config.OutputFile != "" {
+		resolved, _ := resolveDestinationPath(config.OutputFile)
+		jsonOutputPath = resolved
+	}
+
+	// Set GitHub Actions outputs and environment variables
 	scanMode := determineScanMode(config)
 	if err := setOutputs(config.VariablePrefix, stats, output, jsonOutputPath, config.BadgeLabel, scanMode); err != nil {
 		return fmt.Errorf("failed to set outputs: %w", err)
 	}
 
-	// Print summary
+	// Print human-readable summary
 	printSummary(stats, output)
 
-	// Check fail-build condition
-	if config.FailBuild {
-		if shouldFail(stats, config.SeverityCutoff) {
-			return fmt.Errorf("vulnerabilities found at or above %s severity", config.SeverityCutoff)
-		}
+	// Check if build should fail due to vulnerabilities
+	if config.FailBuild && shouldFail(stats, config.SeverityCutoff) {
+		return fmt.Errorf("vulnerabilities found at or above %s severity", config.SeverityCutoff)
 	}
 
 	return nil
-}
-
-func loadConfig() Config {
-	return Config{
-		Scan:           getEnv("INPUT_SCAN", ""),
-		Image:          getEnv("INPUT_IMAGE", ""),
-		Path:           getEnv("INPUT_PATH", ""),
-		SBOM:           getEnv("INPUT_SBOM", ""),
-		FailBuild:      strings.EqualFold(getEnv("INPUT_FAIL-BUILD", "false"), "true"),
-		SeverityCutoff: strings.ToLower(getEnv("INPUT_SEVERITY-CUTOFF", "medium")),
-		OutputFile:     getEnv("INPUT_OUTPUT-FILE", ""),
-		VariablePrefix: getEnv("INPUT_VARIABLE-PREFIX", "GRYPE_"),
-		OnlyFixed:      strings.EqualFold(getEnv("INPUT_ONLY-FIXED", "false"), "true"),
-		DBUpdate:       strings.EqualFold(getEnv("INPUT_DB-UPDATE", "false"), "true"),
-		Debug:          strings.EqualFold(getEnv("INPUT_DEBUG", "false"), "true"),
-		BadgeLabel:     getEnv("INPUT_BADGE-LABEL", ""),
-	}
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-func isDebugEnabled() bool {
-	return strings.EqualFold(getEnv("INPUT_DEBUG", "false"), "true")
-}
-
-func printDebugEnv() {
-	fmt.Println("=== Environment Variables (sorted) ===")
-	var envVars []string
-	for _, env := range os.Environ() {
-		if strings.HasPrefix(env, "INPUT_") || strings.HasPrefix(env, "GITHUB_") {
-			envVars = append(envVars, env)
-		}
-	}
-	sort.Strings(envVars)
-	for _, v := range envVars {
-		fmt.Println(v)
-	}
-	fmt.Println("======================================")
-}
-
-// determineScanTarget figures out what to scan based on config inputs
-// Returns (target, tempDir, error) where tempDir is set if a temporary worktree was created
-func determineScanTarget(config Config) (string, string, error) {
-	// Count how many artifact modes are specified
-	artifactModes := 0
-	if config.Image != "" {
-		artifactModes++
-	}
-	if config.Path != "" {
-		artifactModes++
-	}
-	if config.SBOM != "" {
-		artifactModes++
-	}
-
-	// Check for mutual exclusivity
-	if artifactModes > 1 {
-		return "", "", fmt.Errorf("only one of image, path, or sbom can be specified")
-	}
-
-	if artifactModes > 0 && config.Scan != "" {
-		return "", "", fmt.Errorf("scan cannot be used together with image, path, or sbom")
-	}
-
-	// Artifact-based scanning
-	if config.Image != "" {
-		return config.Image, "", nil
-	}
-	if config.Path != "" {
-		// Grype uses dir: prefix for directories, file: for files
-		info, err := os.Stat(config.Path)
-		if err != nil {
-			return "", "", fmt.Errorf("path %q not found: %w", config.Path, err)
-		}
-		if info.IsDir() {
-			return "dir:" + config.Path, "", nil
-		}
-		return "file:" + config.Path, "", nil
-	}
-	if config.SBOM != "" {
-		return "sbom:" + config.SBOM, "", nil
-	}
-
-	// Repository-based scanning (default mode)
-	scan := strings.TrimSpace(config.Scan)
-	if scan == "" {
-		scan = "latest_release"
-	}
-
-	return handleRepoScan(scan)
-}
-
-// handleRepoScan handles repository-based scanning (latest_release, head, or specific ref)
-// Returns (target, tempDir, error) where tempDir is set if a temporary worktree was created
-func handleRepoScan(scan string) (string, string, error) {
-	// Configure git safe directories for Docker container environment
-	if err := configureGitSafeDirectory(); err != nil {
-		fmt.Printf("Warning: %v\n", err)
-	}
-
-	fmt.Printf("Repository scan mode: %s\n", scan)
-
-	switch strings.ToLower(scan) {
-	case "head":
-		// Scan current working directory as-is - no git operations needed
-		// The user has already checked out what they want via actions/checkout
-		fmt.Println("Scanning current working directory (head mode)")
-		return "dir:.", "", nil
-
-	case "latest_release":
-		// Get the latest release tag
-		latestTag, err := getLatestReleaseTag()
-		if err != nil {
-			return "", "", fmt.Errorf("could not determine latest release: %w", err)
-		}
-		fmt.Printf("Found latest release: %s\n", latestTag)
-		// Checkout to temp worktree to avoid modifying user's workspace
-		scanDir, err := checkoutToWorktree(latestTag)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to checkout %s: %w", latestTag, err)
-		}
-		return "dir:" + scanDir, scanDir, nil
-
-	default:
-		// Treat as a specific tag or branch name
-		fmt.Printf("Checking out ref: %s\n", scan)
-		// Checkout to temp worktree to avoid modifying user's workspace
-		scanDir, err := checkoutToWorktree(scan)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to checkout %s: %w", scan, err)
-		}
-		return "dir:" + scanDir, scanDir, nil
-	}
-}
-
-// configureGitSafeDirectory adds directories to Git's safe.directory config
-func configureGitSafeDirectory() error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
-	}
-
-	// Add current directory to safe.directory
-	cmd := exec.Command("git", "config", "--global", "--add", "safe.directory", cwd)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to configure git safe.directory: %w", err)
-	}
-
-	// Also add /github/workspace if in GitHub Actions Docker environment
-	if workspace := os.Getenv("GITHUB_WORKSPACE"); workspace != "" && workspace != cwd {
-		cmd = exec.Command("git", "config", "--global", "--add", "safe.directory", workspace)
-		_ = cmd.Run() // Non-fatal
-	}
-
-	return nil
-}
-
-// getLatestReleaseTag returns the latest stable release tag (highest semver)
-func getLatestReleaseTag() (string, error) {
-	if _, err := exec.LookPath("git"); err != nil {
-		return "", fmt.Errorf("git not found: %w", err)
-	}
-
-	// Fetch all tags to ensure we have the latest
-	fmt.Println("Fetching tags...")
-	cmd := exec.Command("git", "fetch", "--tags", "--force")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("Warning: Could not fetch tags: %v\n", err)
-	}
-
-	// Get all tags sorted by version (descending)
-	cmd = exec.Command("git", "tag", "--sort=-v:refname")
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to list tags: %w", err)
-	}
-
-	tags := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(tags) == 0 || tags[0] == "" {
-		return "", fmt.Errorf("no release tags found in repository. Use 'scan: head' to scan the current checkout, or create a semver tag (e.g., v1.0.0)")
-	}
-
-	// Filter out pre-release tags
-	for _, tag := range tags {
-		if !isPreReleaseTag(tag) {
-			return tag, nil
-		}
-	}
-
-	// If all tags are pre-release, use the highest one
-	fmt.Printf("Warning: All tags appear to be pre-release. Using: %s\n", tags[0])
-	return tags[0], nil
-}
-
-// isPreReleaseTag checks if a tag is a pre-release version (contains hyphen after version)
-func isPreReleaseTag(tag string) bool {
-	normalized := strings.TrimPrefix(strings.TrimPrefix(tag, "v"), "V")
-	parts := strings.SplitN(normalized, "-", 2)
-	if len(parts) < 2 {
-		return false
-	}
-	// Check if first part looks like a version number
-	for _, c := range parts[0] {
-		if c != '.' && (c < '0' || c > '9') {
-			return false
-		}
-	}
-	return len(parts[0]) > 0 && len(parts[1]) > 0
-}
-
-// validateRefName validates a git ref name for safety
-func validateRefName(ref string) error {
-	if ref == "" {
-		return fmt.Errorf("ref name cannot be empty")
-	}
-	for i, c := range ref {
-		if c < 32 || c == 127 {
-			return fmt.Errorf("ref contains invalid character at position %d", i)
-		}
-	}
-	for _, pattern := range []string{"..", "~", "^", ":", "?", "*", "[", "\\", " "} {
-		if strings.Contains(ref, pattern) {
-			return fmt.Errorf("ref contains invalid pattern %q", pattern)
-		}
-	}
-	if strings.HasPrefix(ref, ".") || strings.HasSuffix(ref, ".") ||
-		strings.HasPrefix(ref, "/") || strings.HasSuffix(ref, "/") {
-		return fmt.Errorf("ref cannot start or end with . or /")
-	}
-	return nil
-}
-
-// checkoutToWorktree creates a temporary git worktree for the given ref
-// This avoids modifying the user's workspace state
-func checkoutToWorktree(ref string) (string, error) {
-	if err := validateRefName(ref); err != nil {
-		return "", fmt.Errorf("invalid ref %q: %w", ref, err)
-	}
-
-	// Create a temporary directory for the worktree
-	tmpDir, err := os.MkdirTemp("", "grype-scan-*")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp directory: %w", err)
-	}
-
-	fmt.Printf("Creating temporary worktree at %s for ref %s\n", tmpDir, ref)
-
-	// Add the worktree
-	cmd := exec.Command("git", "worktree", "add", "--detach", tmpDir, ref)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		// Clean up temp dir on failure
-		_ = os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("failed to create worktree: %w", err)
-	}
-
-	return tmpDir, nil
-}
-
-// cleanupWorktree removes a temporary git worktree and its directory
-func cleanupWorktree(worktreeDir string) {
-	if worktreeDir == "" {
-		return
-	}
-
-	fmt.Printf("Cleaning up temporary worktree at %s\n", worktreeDir)
-
-	// Remove the worktree from git's tracking
-	cmd := exec.Command("git", "worktree", "remove", "--force", worktreeDir)
-	if err := cmd.Run(); err != nil {
-		// If git worktree remove fails, try to at least remove the directory
-		fmt.Printf("Warning: git worktree remove failed: %v\n", err)
-	}
-
-	// Ensure the directory is removed
-	if err := os.RemoveAll(worktreeDir); err != nil {
-		fmt.Printf("Warning: failed to remove worktree directory: %v\n", err)
-	}
-}
-
-// updateGrypeDB updates the Grype vulnerability database
-func updateGrypeDB() error {
-	fmt.Println("Updating Grype vulnerability database...")
-	cmd := exec.Command("grype", "db", "update")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("grype db update failed: %w", err)
-	}
-	fmt.Println("Database update complete")
-	return nil
-}
-
-func runGrypeScan(config Config, target, outputPath string) error {
-	fmt.Printf("Running grype scan...\n")
-
-	args := []string{target, "-o", "json", "--file", outputPath}
-
-	if config.OnlyFixed {
-		args = append(args, "--only-fixed")
-	}
-
-	cmd := exec.Command("grype", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err := cmd.Run()
-	if err != nil {
-		// Check if output file exists - grype returns non-zero when vulns found
-		if _, statErr := os.Stat(outputPath); statErr == nil {
-			fmt.Println("Grype scan completed (vulnerabilities found)")
-			return nil
-		}
-		return err
-	}
-
-	fmt.Println("Grype scan completed")
-	return nil
-}
-
-func parseGrypeOutput(filePath string) (*GrypeOutput, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read output file: %w", err)
-	}
-
-	var output GrypeOutput
-	if err := json.Unmarshal(data, &output); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: %w", err)
-	}
-
-	return &output, nil
-}
-
-type Stats struct {
-	Total    int
-	Critical int
-	High     int
-	Medium   int
-	Low      int
-	Other    int
-}
-
-func calculateStats(output *GrypeOutput) Stats {
-	stats := Stats{}
-	for _, match := range output.Matches {
-		stats.Total++
-		switch strings.ToLower(match.Vulnerability.Severity) {
-		case "critical":
-			stats.Critical++
-		case "high":
-			stats.High++
-		case "medium":
-			stats.Medium++
-		case "low":
-			stats.Low++
-		default:
-			stats.Other++
-		}
-	}
-	return stats
-}
-
-func shouldFail(stats Stats, cutoff string) bool {
-	switch strings.ToLower(cutoff) {
-	case "critical":
-		return stats.Critical > 0
-	case "high":
-		return stats.Critical > 0 || stats.High > 0
-	case "medium":
-		return stats.Critical > 0 || stats.High > 0 || stats.Medium > 0
-	case "low":
-		return stats.Critical > 0 || stats.High > 0 || stats.Medium > 0 || stats.Low > 0
-	case "negligible":
-		return stats.Total > 0
-	default:
-		return stats.Critical > 0 || stats.High > 0 || stats.Medium > 0
-	}
-}
-
-// validatePathInWorkspace ensures dst is within workspace (prevents path traversal)
-func validatePathInWorkspace(dst, workspace string) error {
-	absDst, err := filepath.Abs(filepath.Clean(dst))
-	if err != nil {
-		return fmt.Errorf("failed to resolve destination: %w", err)
-	}
-	absWorkspace, err := filepath.Abs(filepath.Clean(workspace))
-	if err != nil {
-		return fmt.Errorf("failed to resolve workspace: %w", err)
-	}
-	rel, err := filepath.Rel(absWorkspace, absDst)
-	if err != nil {
-		return fmt.Errorf("failed to compute relative path: %w", err)
-	}
-	if strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
-		return fmt.Errorf("path traversal detected: %q outside workspace", dst)
-	}
-	return nil
-}
-
-func copyOutputFile(src, dst string) (string, error) {
-	var workspace string
-	var usedWorkspace bool
-
-	if !filepath.IsAbs(dst) {
-		if _, err := os.Stat("/github/workspace"); err == nil {
-			workspace = "/github/workspace"
-			dst = filepath.Join(workspace, dst)
-			usedWorkspace = true
-		} else if ws := os.Getenv("GITHUB_WORKSPACE"); ws != "" {
-			workspace = ws
-			dst = filepath.Join(workspace, dst)
-			usedWorkspace = true
-		} else {
-			var err error
-			dst, err = filepath.Abs(dst)
-			if err != nil {
-				return "", fmt.Errorf("failed to make path absolute: %w", err)
-			}
-		}
-	}
-
-	if usedWorkspace && workspace != "" {
-		if err := validatePathInWorkspace(dst, workspace); err != nil {
-			return "", err
-		}
-	}
-
-	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return "", fmt.Errorf("failed to create directory: %w", err)
-	}
-
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return "", fmt.Errorf("failed to read source: %w", err)
-	}
-
-	if err := os.WriteFile(dst, data, 0644); err != nil {
-		return "", fmt.Errorf("failed to write destination: %w", err)
-	}
-
-	return dst, nil
-}
-
-func setOutputs(prefix string, stats Stats, output *GrypeOutput, jsonPath, badgeLabel, scanMode string) error {
-	githubOutput := os.Getenv("GITHUB_OUTPUT")
-	if githubOutput == "" {
-		fmt.Println("Warning: GITHUB_OUTPUT not set, skipping output generation")
-		return nil
-	}
-
-	f, err := os.OpenFile(githubOutput, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-
-	// Generate badge label (auto-generate if empty)
-	label := badgeLabel
-	if label == "" {
-		label = buildBadgeLabel(scanMode)
-	}
-
-	// Generate badge URL
-	badgeURL := generateBadgeURL(stats, label, output.DBBuilt())
-
-	outputs := map[string]string{
-		"grype-version": output.Descriptor.Version,
-		"db-version":    output.DBBuilt(),
-		"cve-count":     fmt.Sprintf("%d", stats.Total),
-		"critical":      fmt.Sprintf("%d", stats.Critical),
-		"high":          fmt.Sprintf("%d", stats.High),
-		"medium":        fmt.Sprintf("%d", stats.Medium),
-		"low":           fmt.Sprintf("%d", stats.Low),
-		"badge-url":     badgeURL,
-	}
-	if jsonPath != "" {
-		outputs["json-output"] = jsonPath
-	}
-
-	for key, value := range outputs {
-		if _, err := fmt.Fprintf(f, "%s=%s\n", key, value); err != nil {
-			return err
-		}
-	}
-
-	// Set environment variables with custom prefix
-	githubEnv := os.Getenv("GITHUB_ENV")
-	if githubEnv != "" {
-		envFile, err := os.OpenFile(githubEnv, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = envFile.Close() }()
-
-		envVars := map[string]string{
-			"VERSION":    output.Descriptor.Version,
-			"DB_VERSION": output.DBBuilt(),
-			"CVE_COUNT":  fmt.Sprintf("%d", stats.Total),
-			"CRITICAL":   fmt.Sprintf("%d", stats.Critical),
-			"HIGH":       fmt.Sprintf("%d", stats.High),
-			"MEDIUM":     fmt.Sprintf("%d", stats.Medium),
-			"LOW":        fmt.Sprintf("%d", stats.Low),
-			"BADGE_URL":  badgeURL,
-		}
-		for key, value := range envVars {
-			if _, err := fmt.Fprintf(envFile, "%s%s=%s\n", prefix, key, value); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func printSummary(stats Stats, output *GrypeOutput) {
-	fmt.Println("\n=== Grype Scan Summary ===")
-	fmt.Printf("Grype Version: %s\n", output.Descriptor.Version)
-	fmt.Printf("Database Version: %s\n", output.DBBuilt())
-	fmt.Printf("\nVulnerabilities Found:\n")
-	fmt.Printf("  Total:    %d\n", stats.Total)
-	fmt.Printf("  Critical: %d\n", stats.Critical)
-	fmt.Printf("  High:     %d\n", stats.High)
-	fmt.Printf("  Medium:   %d\n", stats.Medium)
-	fmt.Printf("  Low:      %d\n", stats.Low)
-	if stats.Other > 0 {
-		fmt.Printf("  Other:    %d\n", stats.Other)
-	}
-	fmt.Println("==========================")
-}
-
-// determineScanMode returns a human-readable scan mode string for the badge label.
-func determineScanMode(config Config) string {
-	if config.Image != "" {
-		return "image"
-	}
-	if config.Path != "" {
-		return "path"
-	}
-	if config.SBOM != "" {
-		return "sbom"
-	}
-	// Repository mode
-	scan := config.Scan
-	if scan == "" {
-		scan = "latest_release"
-	}
-	switch scan {
-	case "latest_release":
-		return "release"
-	case "head":
-		return "head"
-	default:
-		return "ref"
-	}
-}
-
-// buildBadgeLabel creates a badge label like "grype scan release"
-func buildBadgeLabel(scanMode string) string {
-	return fmt.Sprintf("grype scan %s", scanMode)
-}
-
-// extractDBDate extracts YYYY-MM-DD from a timestamp like "2026-01-30T12:34:56Z"
-func extractDBDate(timestamp string) string {
-	if len(timestamp) >= 10 {
-		return timestamp[:10]
-	}
-	return timestamp
-}
-
-// generateBadgeURL creates a shields.io badge URL based on scan statistics.
-// The badge displays vulnerability counts and uses colors based on severity:
-// - Green: No vulnerabilities
-// - Yellow: Only low/medium vulnerabilities
-// - Orange: High vulnerabilities present
-// - Red: Critical vulnerabilities present
-func generateBadgeURL(stats Stats, label, dbBuilt string) string {
-	// Build the badge message showing counts
-	message := formatBadgeMessage(stats)
-
-	// Append DB build date to message
-	if dbBuilt != "" {
-		dbDate := extractDBDate(dbBuilt)
-		if dbDate != "" {
-			message = fmt.Sprintf("%s (db build %s)", message, dbDate)
-		}
-	}
-
-	// Determine badge color based on severity
-	color := determineBadgeColor(stats)
-
-	// Use shields.io static badge format
-	// URL format: https://img.shields.io/badge/{label}-{message}-{color}
-	encodedLabel := url.PathEscape(label)
-	encodedMessage := url.PathEscape(message)
-
-	return fmt.Sprintf("https://img.shields.io/badge/%s-%s-%s", encodedLabel, encodedMessage, color)
-}
-
-// formatBadgeMessage creates the message portion of the badge.
-// Shows "none" if no vulnerabilities, otherwise shows counts by severity.
-func formatBadgeMessage(stats Stats) string {
-	if stats.Total == 0 {
-		return "none"
-	}
-
-	var parts []string
-
-	if stats.Critical > 0 {
-		parts = append(parts, fmt.Sprintf("%d critical", stats.Critical))
-	}
-	if stats.High > 0 {
-		parts = append(parts, fmt.Sprintf("%d high", stats.High))
-	}
-	if stats.Medium > 0 {
-		parts = append(parts, fmt.Sprintf("%d medium", stats.Medium))
-	}
-	if stats.Low > 0 {
-		parts = append(parts, fmt.Sprintf("%d low", stats.Low))
-	}
-
-	// If only "other" severities exist
-	if len(parts) == 0 && stats.Other > 0 {
-		parts = append(parts, fmt.Sprintf("%d other", stats.Other))
-	}
-
-	return strings.Join(parts, " | ")
-}
-
-// determineBadgeColor returns the badge color based on the highest severity found.
-// Colors follow a traffic light pattern for easy visual interpretation.
-func determineBadgeColor(stats Stats) string {
-	switch {
-	case stats.Critical > 0:
-		return "critical" // red
-	case stats.High > 0:
-		return "orange"
-	case stats.Medium > 0:
-		return "yellow"
-	case stats.Low > 0 || stats.Other > 0:
-		return "yellowgreen"
-	default:
-		return "brightgreen"
-	}
 }
