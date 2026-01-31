@@ -219,6 +219,8 @@ func handleScanTarget(scan string) error {
 }
 
 // getDefaultBranch returns the default branch name (e.g., "main" or "master")
+// It prioritizes remote refs over local refs since the remote default branch
+// is typically more authoritative.
 func getDefaultBranch() (string, error) {
 	// Check if git is available
 	if _, err := exec.LookPath("git"); err != nil {
@@ -243,14 +245,33 @@ func getDefaultBranch() (string, error) {
 		}
 	}
 
+	// refs/remotes/origin/HEAD not set - try to auto-detect it
+	fmt.Printf("refs/remotes/origin/HEAD not set, attempting to auto-detect...\n")
+	cmd = exec.Command("git", "remote", "set-head", "origin", "--auto")
+	if err := cmd.Run(); err == nil {
+		// Try again after setting HEAD
+		cmd = exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD")
+		output, err := cmd.Output()
+		if err == nil {
+			ref := strings.TrimSpace(string(output))
+			parts := strings.Split(ref, "/")
+			if len(parts) > 0 {
+				return parts[len(parts)-1], nil
+			}
+		}
+	}
+
 	// Fallback: try common default branch names
+	// Prioritize remote refs over local refs since the remote default branch
+	// is typically more authoritative
 	for _, branch := range []string{"main", "master"} {
-		cmd = exec.Command("git", "rev-parse", "--verify", fmt.Sprintf("refs/heads/%s", branch))
+		// Check remote refs first
+		cmd = exec.Command("git", "rev-parse", "--verify", fmt.Sprintf("refs/remotes/origin/%s", branch))
 		if err := cmd.Run(); err == nil {
 			return branch, nil
 		}
-		// Also check remote refs
-		cmd = exec.Command("git", "rev-parse", "--verify", fmt.Sprintf("refs/remotes/origin/%s", branch))
+		// Then check local refs
+		cmd = exec.Command("git", "rev-parse", "--verify", fmt.Sprintf("refs/heads/%s", branch))
 		if err := cmd.Run(); err == nil {
 			return branch, nil
 		}
