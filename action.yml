@@ -9,10 +9,13 @@ inputs:
   scan:
     description: >-
       Specifies what to scan. Can be:
-      - 'latest_release': Scan the latest published release (default)
+      - 'latest_release': Scan the highest version tag (sorted by semantic
+        version, not chronological). Requires at least one tag in the
+        repository; use 'head' if your repository has no tags.
       - 'head': Scan the head of the main/default branch
       - A tag name: Scan a specific tag in the repository
       - A branch name: Scan a specific branch in the repository
+      Note: Uses local git tags, not the GitHub Releases API.
     required: false
     default: 'latest_release'
   output-file:
