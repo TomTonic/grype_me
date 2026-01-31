@@ -26,6 +26,7 @@ jobs:
       packages: read
     outputs:
       grype_version: ${{ steps.check.outputs.grype_version }}
+      action_version: ${{ steps.check.outputs.action_version }}
       publish: ${{ steps.check.outputs.publish }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -49,6 +50,24 @@ jobs:
             const grypeVersion = release.data.tag_name.replace(/^v/, '');
             const tag = `grype-${grypeVersion}`;
             core.info(`Latest grype release: ${grypeVersion}`);
+
+            // Get latest action release for scheduled builds
+            let actionVersion = '';
+            try {
+              const actionRelease = await github.rest.repos.getLatestRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo
+              });
+              actionVersion = actionRelease.data.tag_name.replace(/^v/, '');
+              core.info(`Latest action release: ${actionVersion}`);
+            } catch (error) {
+              if (error.status === 404) {
+                actionVersion = '1.0.0';
+                core.info('No action release found, using default version 1.0.0');
+              } else {
+                throw error;
+              }
+            }
 
             const packageName = context.repo.repo;
             let versions = [];
@@ -83,6 +102,7 @@ jobs:
             );
             core.info(`GHCR tag ${tag} exists: ${hasTag}`);
             core.setOutput('grype_version', grypeVersion);
+            core.setOutput('action_version', actionVersion);
             core.setOutput('publish', hasTag ? 'false' : 'true');
 
   publish:
@@ -118,16 +138,26 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           GRYPE_VERSION: ${{ needs.grype-release.outputs.grype_version }}
+          ACTION_VERSION: ${{ needs.grype-release.outputs.action_version }}
         run: |
           IMAGE_NAME="ghcr.io/${{ github.repository }}"
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           if [ "$EVENT_NAME" = "release" ]; then
+            # Manual release: vX.Y.Z-release + moving tags
             VERSION="${RELEASE_TAG#v}"
             MAJOR="v${VERSION%%.*}"
             MINOR="v${VERSION%.*}"
-            TAGS="${IMAGE_NAME}:${RELEASE_TAG},${IMAGE_NAME}:${MAJOR},${IMAGE_NAME}:${MINOR},${IMAGE_NAME}:latest"
+            SPECIFIC_TAG="${IMAGE_NAME}:v${VERSION}-release"
+            MOVING_TAGS="${IMAGE_NAME}:${RELEASE_TAG},${IMAGE_NAME}:${MAJOR},${IMAGE_NAME}:${MINOR},${IMAGE_NAME}:latest"
+            TAGS="${SPECIFIC_TAG},${MOVING_TAGS}"
           else
-            TAGS="${IMAGE_NAME}:grype-${GRYPE_VERSION}"
+            # Automatic build: vX.Y.Z_grype-A.B.C + moving tags
+            VERSION="${ACTION_VERSION}"
+            MAJOR="v${VERSION%%.*}"
+            MINOR="v${VERSION%.*}"
+            SPECIFIC_TAG="${IMAGE_NAME}:v${VERSION}_grype-${GRYPE_VERSION}"
+            MOVING_TAGS="${IMAGE_NAME}:v${VERSION},${IMAGE_NAME}:${MAJOR},${IMAGE_NAME}:${MINOR},${IMAGE_NAME}:latest"
+            TAGS="${SPECIFIC_TAG},${MOVING_TAGS}"
           fi
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
 

@@ -298,10 +298,6 @@ func configureGitSafeDirectory() error {
 		_ = cmd.Run() // Non-fatal
 	}
 
-	// Add wildcard for safety
-	cmd = exec.Command("git", "config", "--global", "--add", "safe.directory", "*")
-	_ = cmd.Run() // Non-fatal
-
 	return nil
 }
 

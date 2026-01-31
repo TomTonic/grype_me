@@ -252,3 +252,43 @@ jobs:
           name: grype-scan-results
           path: grype-results.json
           retention-days: 7
+
+  integration-test-published:
+    name: Integration Test (published image)
+    runs-on: ubuntu-latest
+    needs: [test]
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Run Grype Action from GHCR
+        id: grype-scan-published
+        uses: TomTonic/grype_me@v1.0.0
+        with:
+          scan: 'head'
+          output-file: 'grype-results-published.json'
+          variable-prefix: 'GRYPE_PUBLISHED_'
+
+      - name: Verify outputs (published)
+        run: |
+          echo "Grype Version (published): ${{ steps.grype-scan-published.outputs.grype-version }}"
+          if [ -z "${{ steps.grype-scan-published.outputs.grype-version }}" ]; then
+            echo "ERROR: Grype version output is empty (published image)" >&2
+            exit 1
+          fi
+          echo "✓ Published image executed successfully"
+
+      - name: Check output file exists (published)
+        run: |
+          if [ ! -f grype-results-published.json ]; then
+            echo "ERROR: Output file grype-results-published.json not found" >&2
+            exit 1
+          fi
+          echo "✓ Output file created (published)"
