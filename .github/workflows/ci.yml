@@ -198,8 +198,9 @@ jobs:
           cache-to: type=gha,mode=max
 
   integration-test:
-    name: Integration Test
+    name: Integration Test (local build)
     runs-on: ubuntu-latest
+    needs: [docker-build]
     permissions:
       contents: read
     steps:
@@ -211,13 +212,50 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Run Grype Action (self-test)
-        id: grype-scan
-        uses: ./
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build Docker image for testing
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
-          scan: 'head'
-          output-file: 'grype-results.json'
-          variable-prefix: 'GRYPE_'
+          context: .
+          push: false
+          load: true
+          tags: grype_me:local-test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run integration test (simulating GitHub Actions environment)
+        id: grype-scan
+        run: |
+          # Create output directory
+          mkdir -p "$GITHUB_WORKSPACE"
+
+          # Run the locally built image with GitHub Actions-like environment
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/github/workspace" \
+            -e GITHUB_WORKSPACE=/github/workspace \
+            -e GITHUB_REPOSITORY="${GITHUB_REPOSITORY}" \
+            -e GITHUB_OUTPUT=/github/workspace/github_output.txt \
+            -e INPUT_SCAN=head \
+            -e INPUT_OUTPUT-FILE=grype-results.json \
+            -e INPUT_VARIABLE-PREFIX=GRYPE_ \
+            -e INPUT_FAIL-BUILD=false \
+            -e INPUT_SEVERITY-CUTOFF=medium \
+            -e INPUT_ONLY-FIXED=false \
+            -e INPUT_DB-UPDATE=false \
+            -e INPUT_DEBUG=false \
+            grype_me:local-test
+
+          # Parse outputs from the output file
+          if [ -f "$GITHUB_WORKSPACE/github_output.txt" ]; then
+            echo "=== Action Outputs ==="
+            cat "$GITHUB_WORKSPACE/github_output.txt"
+            # Export outputs for subsequent steps
+            while IFS='=' read -r key value; do
+              echo "${key}=${value}" >> "$GITHUB_OUTPUT"
+            done < "$GITHUB_WORKSPACE/github_output.txt"
+          fi
 
       - name: Verify outputs
         run: |
@@ -244,6 +282,9 @@ jobs:
             exit 1
           fi
           echo "✓ Output file created"
+          # Show a preview of the results
+          echo "=== Results preview (first 50 lines) ==="
+          head -50 grype-results.json || true
 
       - name: Upload scan results
         if: always()
@@ -252,43 +293,3 @@ jobs:
           name: grype-scan-results
           path: grype-results.json
           retention-days: 7
-
-  integration-test-published:
-    name: Integration Test (published image)
-    runs-on: ubuntu-latest
-    needs: [test]
-    permissions:
-      contents: read
-    steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
-        with:
-          egress-policy: audit
-
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Run Grype Action from GHCR
-        id: grype-scan-published
-        uses: TomTonic/grype_me@v1.0.0
-        with:
-          scan: 'head'
-          output-file: 'grype-results-published.json'
-          variable-prefix: 'GRYPE_PUBLISHED_'
-
-      - name: Verify outputs (published)
-        run: |
-          echo "Grype Version (published): ${{ steps.grype-scan-published.outputs.grype-version }}"
-          if [ -z "${{ steps.grype-scan-published.outputs.grype-version }}" ]; then
-            echo "ERROR: Grype version output is empty (published image)" >&2
-            exit 1
-          fi
-          echo "✓ Published image executed successfully"
-
-      - name: Check output file exists (published)
-        run: |
-          if [ ! -f grype-results-published.json ]; then
-            echo "ERROR: Output file grype-results-published.json not found" >&2
-            exit 1
-          fi
-          echo "✓ Output file created (published)"

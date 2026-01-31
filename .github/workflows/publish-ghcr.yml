@@ -209,3 +209,87 @@ jobs:
           tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  verify-published:
+    name: Verify Published Image
+    runs-on: ubuntu-latest
+    needs: [publish, grype-release]
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Wait for GHCR propagation
+        run: sleep 10
+
+      - name: Log in to GHCR (pull)
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull and run published image (v1 tag)
+        id: grype-scan-published
+        run: |
+          set -euo pipefail
+
+          IMAGE_NAME="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          IMAGE_TAG="v1"
+          IMAGE_REF="${IMAGE_NAME}:${IMAGE_TAG}"
+
+          echo "Pulling ${IMAGE_REF}"
+          docker pull "${IMAGE_REF}"
+
+          echo "Running ${IMAGE_REF}"
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/github/workspace" \
+            -e GITHUB_WORKSPACE=/github/workspace \
+            -e GITHUB_REPOSITORY="${GITHUB_REPOSITORY}" \
+            -e GITHUB_OUTPUT=/github/workspace/github_output_published.txt \
+            -e INPUT_SCAN=head \
+            -e INPUT_OUTPUT-FILE=grype-results-published.json \
+            -e INPUT_VARIABLE-PREFIX=GRYPE_PUBLISHED_ \
+            -e INPUT_FAIL-BUILD=false \
+            -e INPUT_SEVERITY-CUTOFF=medium \
+            -e INPUT_ONLY-FIXED=false \
+            -e INPUT_DB-UPDATE=false \
+            -e INPUT_DEBUG=false \
+            "${IMAGE_REF}"
+
+          if [ -f "${GITHUB_WORKSPACE}/github_output_published.txt" ]; then
+            echo "=== Action Outputs (published image) ==="
+            cat "${GITHUB_WORKSPACE}/github_output_published.txt"
+            while IFS='=' read -r key value; do
+              echo "${key}=${value}" >> "$GITHUB_OUTPUT"
+            done < "${GITHUB_WORKSPACE}/github_output_published.txt"
+          else
+            echo "ERROR: Expected GITHUB_OUTPUT file not found" >&2
+            exit 1
+          fi
+
+      - name: Verify outputs
+        run: |
+          echo "=== Published Image Test Results ==="
+          echo "Grype Version: ${{ steps.grype-scan-published.outputs.grype-version }}"
+          echo "Database Version: ${{ steps.grype-scan-published.outputs.db-version }}"
+          echo "Total CVEs: ${{ steps.grype-scan-published.outputs.cve-count }}"
+
+          if [ -z "${{ steps.grype-scan-published.outputs.grype-version }}" ]; then
+            echo "ERROR: Grype version output is empty (published image)" >&2
+            exit 1
+          fi
+
+          if [ ! -f grype-results-published.json ]; then
+            echo "ERROR: Output file grype-results-published.json not found" >&2
+            exit 1
+          fi
+
+          echo "✓ Published image (v1) works correctly"
