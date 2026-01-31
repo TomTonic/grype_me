@@ -69,6 +69,13 @@ inputs:
       Only report vulnerabilities that have a fix available.
     required: false
     default: 'false'
+  db-update:
+    description: >-
+      Update the vulnerability database before scanning. The image ships with
+      a pre-downloaded DB (max 24h old). Set to 'true' for critical scans
+      requiring the absolute latest data. Default: 'false' (use built-in DB).
+    required: false
+    default: 'false'
   debug:
     description: >-
       Enable debug output (prints environment variables when true).

@@ -60,6 +60,7 @@ type Config struct {
 	OutputFile     string
 	VariablePrefix string
 	OnlyFixed      bool
+	DBUpdate       bool
 	Debug          bool
 }
 
@@ -89,6 +90,13 @@ func run() error {
 	}
 
 	fmt.Printf("Grype scan target: %s\n", target)
+
+	// Update vulnerability database if requested
+	if config.DBUpdate {
+		if err := updateGrypeDB(); err != nil {
+			return fmt.Errorf("failed to update grype database: %w", err)
+		}
+	}
 
 	// Create a temporary file for grype output
 	tmpFile, err := os.CreateTemp("", "grype-output-*.json")
@@ -154,6 +162,7 @@ func loadConfig() Config {
 		OutputFile:     getEnv("INPUT_OUTPUT-FILE", ""),
 		VariablePrefix: getEnv("INPUT_VARIABLE-PREFIX", "GRYPE_"),
 		OnlyFixed:      strings.EqualFold(getEnv("INPUT_ONLY-FIXED", "false"), "true"),
+		DBUpdate:       strings.EqualFold(getEnv("INPUT_DB-UPDATE", "false"), "true"),
 		Debug:          strings.EqualFold(getEnv("INPUT_DEBUG", "false"), "true"),
 	}
 }
@@ -438,6 +447,19 @@ func cleanupWorktree(worktreeDir string) {
 	if err := os.RemoveAll(worktreeDir); err != nil {
 		fmt.Printf("Warning: failed to remove worktree directory: %v\n", err)
 	}
+}
+
+// updateGrypeDB updates the Grype vulnerability database
+func updateGrypeDB() error {
+	fmt.Println("Updating Grype vulnerability database...")
+	cmd := exec.Command("grype", "db", "update")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("grype db update failed: %w", err)
+	}
+	fmt.Println("Database update complete")
+	return nil
 }
 
 func runGrypeScan(config Config, target, outputPath string) error {

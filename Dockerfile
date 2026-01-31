@@ -29,6 +29,9 @@ RUN curl -sSfL https://get.anchore.io/grype -o /tmp/install-grype.sh && \
     rm /tmp/install-grype.sh && \
     /tmp/grype/grype version
 
+# Download vulnerability database at build time for faster runtime
+RUN /tmp/grype/grype db update
+
 # Final stage - use same Alpine version as builder for consistency
 FROM alpine:${ALPINE_VERSION}
 
@@ -37,6 +40,12 @@ RUN apk add --no-cache ca-certificates bash git
 
 # Copy verified grype binary from installer stage
 COPY --from=grype-installer /tmp/grype/grype /usr/local/bin/grype
+
+# Copy pre-downloaded vulnerability database
+COPY --from=grype-installer /root/.cache/grype /root/.cache/grype
+
+# Ensure Grype uses the baked-in DB regardless of HOME/XDG cache paths.
+ENV GRYPE_DB_CACHE_DIR=/root/.cache/grype/db
 
 # Copy the built application
 COPY --from=builder /app/grype-action /usr/local/bin/grype-action
