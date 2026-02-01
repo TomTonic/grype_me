@@ -89,7 +89,7 @@ inputs:
       <mode> is 'release', 'head', 'image', or 'path'.
       Set to override with custom text.
       Underscores and hyphens must be escaped for proper
-      rendering by shields.io. 
+      rendering by shields.io.
     required: false
     default: ''
 
