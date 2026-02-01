@@ -56,7 +56,7 @@ inputs:
     required: false
     default: 'medium'
   output-file:
-    description: 'Path to save JSON scan results (optional)'
+    description: 'Path to save grype''s JSON scan results (optional)'
     required: false
     default: ''
   variable-prefix:
@@ -85,8 +85,11 @@ inputs:
   badge-label:
     description: >-
       Label text for the generated shields.io badge URL.
-      Default: auto-generated as 'grype scan <mode> (DB: YYYY-MM-DD)'.
+      Default: auto-generated as '✊ grype_me <mode>', where
+      <mode> is 'release', 'head', 'image', or 'path'.
       Set to override with custom text.
+      Underscores and hyphens must be escaped for proper
+      rendering by shields.io. 
     required: false
     default: ''
 
