@@ -204,9 +204,10 @@ func resolveDestinationPath(destPath string) (string, string) {
 }
 
 // buildBadgeLabel creates a badge label based on the scan mode.
-// Format: "grype scan <mode>" (e.g., "grype scan release")
+// Format: "grype_me <mode>" (e.g., "grype_me release")
+// Note: the underscore must be "escaped" as double underscore "__" for shields.io to render it correctly.
 func buildBadgeLabel(scanMode string) string {
-	return fmt.Sprintf("grype scan %s", scanMode)
+	return fmt.Sprintf("✊ grype__me %s", scanMode)
 }
 
 // extractDBDate extracts the date portion (YYYY-MM-DD) from a timestamp.
@@ -231,7 +232,8 @@ func generateBadgeURL(stats VulnerabilityStats, label, dbBuilt string) string {
 	// Append database build date to the message
 	if dbBuilt != "" {
 		if dbDate := extractDBDate(dbBuilt); dbDate != "" {
-			message = fmt.Sprintf("%s (db build %s)", message, dbDate)
+			dbDate = strings.ReplaceAll(dbDate, "-", "--") // Escape dashes for shields.io
+			message = fmt.Sprintf("%s (db date %s)", message, dbDate)
 		}
 	}
 
@@ -248,7 +250,7 @@ func generateBadgeURL(stats VulnerabilityStats, label, dbBuilt string) string {
 // Shows "none" if no vulnerabilities, otherwise shows counts by severity level.
 func formatBadgeMessage(stats VulnerabilityStats) string {
 	if stats.Total == 0 {
-		return "none"
+		return "no vulnerabilities found"
 	}
 
 	var parts []string
