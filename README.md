@@ -1,6 +1,6 @@
 # ✊ grype_me
 
-![Vulnerabilities](https://img.shields.io/endpoint?url=https://gist.github.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype-badge.json)
+![Vulnerabilities](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype-badge.json)
 
 A lean GitHub Action to scan for vulnerabilities using [Anchore Grype](https://github.com/anchore/grype).
 
