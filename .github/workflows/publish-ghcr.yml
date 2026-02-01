@@ -19,7 +19,7 @@ jobs:
       contents: read
 
   grype-release:
-    name: Check Grype Release
+    name: Data for Tags and Publish Decision
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,7 +35,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Determine latest Grype release
+      - name: Determine latest Grype release, DB version, action version and whether to publish
         id: check
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
@@ -77,7 +77,7 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo
               });
-              actionVersion = actionRelease.data.tag_name.replace(/^v/, '');
+              actionVersion = actionRelease.data.tag_name.replace(/^v/, '').replace(/-release$/, '');
               core.info(`Latest action release: ${actionVersion}`);
             } catch (error) {
               if (error.status === 404) {
@@ -131,9 +131,9 @@ jobs:
               hasTag = versions.some((version) =>
                 (version.metadata?.container?.tags || []).includes(targetTag)
               );
-              core.info(`GHCR tag ${targetTag} exists: ${hasTag}`);
+              core.info(`GHCR tag ${targetTag} exists: ${hasTag}; will NOT publish.`);
             } else {
-              core.info('No target tag determined; will publish.');
+              core.info(`No target tag ${targetTag} determined; will publish.`);
             }
 
             const publish = eventName === 'release' ? 'true' : (hasTag ? 'false' : 'true');
@@ -185,39 +185,33 @@ jobs:
 
           if [ "$EVENT_NAME" = "release" ]; then
             # Manual release triggered by GitHub Release
-            # RELEASE_TAG may be "v1.2.3" or "v1.2.3-release" - normalize to get semver
-            SEMVER="${RELEASE_TAG#v}"           # strip leading v
-            SEMVER="${SEMVER%-release}"         # strip trailing -release if present
-
-            MAJOR="v${SEMVER%%.*}"              # v1
-            MINOR="v${SEMVER%.*}"               # v1.2
-            PATCH="v${SEMVER}"                  # v1.2.3
-
-            # Fixed tag (immutable): vX.Y.Z-release
-            SPECIFIC_TAG="${IMAGE_NAME}:${PATCH}-release"
-
-            # Moving tags: vX.Y.Z, vX.Y, vX, latest
-            MOVING_TAGS="${IMAGE_NAME}:${PATCH},${IMAGE_NAME}:${MINOR},${IMAGE_NAME}:${MAJOR},${IMAGE_NAME}:latest"
-
-            TAGS="${SPECIFIC_TAG},${MOVING_TAGS}"
+            # RELEASE_TAG may be "v1.2.3" or "v1.2.3-release"
+            MY_VER="${RELEASE_TAG}"
           else
             # Automatic/nightly build (schedule or workflow_dispatch)
-            # Normalize ACTION_VERSION: strip leading 'v' and trailing '-release' if present
-            SEMVER="${ACTION_VERSION#v}"
-            SEMVER="${SEMVER%-release}"
+            MY_VER="${ACTION_VERSION}"
+          fi
 
-            MAJOR="v${SEMVER%%.*}"              # v1
-            MINOR="v${SEMVER%.*}"               # v1.2
-            PATCH="v${SEMVER}"                  # v1.2.3
+          # Normalize to semver: MY_VER may be "v1.2.3" or "v1.2.3-release"
+          MY_VER="${MY_VER#v}"                 # strip leading v
+          SEMVER="${MY_VER%-release}"          # strip trailing -release if present
 
+          MAJOR="v${SEMVER%%.*}"              # v1
+          MINOR="v${SEMVER%.*}"               # v1.2
+          PATCH="v${SEMVER}"                  # v1.2.3
+
+          if [ "$EVENT_NAME" = "release" ]; then
+            # Fixed tag (immutable): vX.Y.Z-release
+            SPECIFIC_TAG="${IMAGE_NAME}:${PATCH}-release"
+          else
             # Fixed tag (immutable): vX.Y.Z_grype-A.B.C_db-YYYY-MM-DDTHH-MM-SSZ
             SPECIFIC_TAG="${IMAGE_NAME}:${PATCH}_grype-${GRYPE_VERSION}_db-${DB_BUILT}"
-
-            # Moving tags: vX.Y.Z, vX.Y, vX, latest
-            MOVING_TAGS="${IMAGE_NAME}:${PATCH},${IMAGE_NAME}:${MINOR},${IMAGE_NAME}:${MAJOR},${IMAGE_NAME}:latest"
-
-            TAGS="${SPECIFIC_TAG},${MOVING_TAGS}"
           fi
+
+          # Moving tags: vX.Y.Z, vX.Y, vX, latest
+          MOVING_TAGS="${IMAGE_NAME}:${PATCH},${IMAGE_NAME}:${MINOR},${IMAGE_NAME}:${MAJOR},${IMAGE_NAME}:latest"
+
+          TAGS="${SPECIFIC_TAG},${MOVING_TAGS}"
 
           echo "Generated tags: $TAGS"
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
@@ -263,7 +257,7 @@ jobs:
           set -euo pipefail
 
           IMAGE_NAME="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
-          IMAGE_TAG="v1"
+          IMAGE_TAG="latest"
           IMAGE_REF="${IMAGE_NAME}:${IMAGE_TAG}"
 
           echo "Pulling ${IMAGE_REF}"
@@ -313,4 +307,4 @@ jobs:
             exit 1
           fi
 
-          echo "✓ Published image (v1) works correctly"
+          echo "✓ Published image (latest) works correctly"
