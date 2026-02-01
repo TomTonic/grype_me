@@ -67,14 +67,14 @@ func TestGenerateBadgeURL(t *testing.T) {
 		{
 			name:     "no vulnerabilities with DB date",
 			stats:    VulnerabilityStats{Total: 0},
-			label:    "grype scan release",
+			label:    "✊ grype__me release",
 			dbBuilt:  "2026-01-30T12:34:56Z",
-			contains: []string{"https://img.shields.io/badge/", "grype%20scan%20release", "none", "brightgreen"},
+			contains: []string{"https://img.shields.io/badge/", "%E2%9C%8A%20grype__me%20release", "no%20vulnerabilities%20found", "brightgreen"},
 		},
 		{
 			name:     "critical vulnerabilities",
 			stats:    VulnerabilityStats{Total: 2, Critical: 2},
-			label:    "grype scan image",
+			label:    "✊ grype__me image",
 			dbBuilt:  "2026-01-30",
 			contains: []string{"https://img.shields.io/badge/", "critical"},
 		},
@@ -119,7 +119,7 @@ func TestFormatBadgeMessage(t *testing.T) {
 		stats VulnerabilityStats
 		want  string
 	}{
-		{"no vulnerabilities", VulnerabilityStats{Total: 0}, "none"},
+		{"no vulnerabilities", VulnerabilityStats{Total: 0}, "no vulnerabilities found"},
 		{"only critical", VulnerabilityStats{Total: 2, Critical: 2}, "2 critical"},
 		{"only high", VulnerabilityStats{Total: 3, High: 3}, "3 high"},
 		{"critical and high", VulnerabilityStats{Total: 5, Critical: 2, High: 3}, "2 critical | 3 high"},
@@ -168,10 +168,10 @@ func TestBuildBadgeLabel(t *testing.T) {
 		scanMode string
 		want     string
 	}{
-		{"release", "grype scan release"},
-		{"image", "grype scan image"},
-		{"head", "grype scan head"},
-		{"path", "grype scan path"},
+		{"release", "✊ grype__me release"},
+		{"image", "✊ grype__me image"},
+		{"head", "✊ grype__me head"},
+		{"path", "✊ grype__me path"},
 	}
 
 	for _, tt := range tests {
