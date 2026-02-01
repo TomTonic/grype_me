@@ -131,7 +131,7 @@ jobs:
               hasTag = versions.some((version) =>
                 (version.metadata?.container?.tags || []).includes(targetTag)
               );
-              core.info(`GHCR tag ${targetTag} exists: ${hasTag}; will NOT publish.`);
+              core.info(`GHCR tag ${targetTag} exists; will NOT publish.`);
             } else {
               core.info(`No target tag ${targetTag} determined; will publish.`);
             }
