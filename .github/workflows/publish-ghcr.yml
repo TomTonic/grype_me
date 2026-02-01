@@ -202,7 +202,9 @@ jobs:
             TAGS="${SPECIFIC_TAG},${MOVING_TAGS}"
           else
             # Automatic/nightly build (schedule or workflow_dispatch)
-            SEMVER="${ACTION_VERSION}"
+            # Normalize ACTION_VERSION: strip leading 'v' and trailing '-release' if present
+            SEMVER="${ACTION_VERSION#v}"
+            SEMVER="${SEMVER%-release}"
 
             MAJOR="v${SEMVER%%.*}"              # v1
             MINOR="v${SEMVER%.*}"               # v1.2
