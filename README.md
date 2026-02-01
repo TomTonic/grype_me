@@ -13,6 +13,8 @@ A lean GitHub Action to scan for vulnerabilities using [Anchore Grype](https://g
 
 > **Note**: The default scan mode is `latest_release`, which scans your highest semver tag. If your repo has no tags yet, use `scan: 'head'` instead.
 
+> **Note**: Due to automated daily updates of this action, pinning its version may yield to unexpected behavior. See [Daily tag updates](#daily-tag-updates).
+
 ## Features
 
 - 🔍 Uses the latest Grype version with a daily-updated vulnerability database (bundled in the action image)
@@ -173,6 +175,17 @@ The action image is **rebuilt daily** with the latest Grype and vulnerability da
     scan: 'latest_release'
     db-update: true  # Download latest DB before scanning
 ```
+
+<a name="daily-tag-updates"></a>
+### Daily tags updates
+
+The published container image is rebuilt daily to always contains the newest Grype release and the latest vulnerability database. As a result, moving tags are shifted to the new image every day: `latest`, `v1`, `v1.2`, and `v1.2.3`. By design, the patch level only refers to the patch level of this action, not including the vulnerability database.
+
+Only the following tags remain immutable and stable:
+- `v1.2.3-release`
+- `v1.2.3_grype-0.xyz.0_db-YYYY-MM-DDThh-mm-ssZ`
+
+This behavior is intentional but can be surprising if you try to pin to a patch level tag in CI or other automation. If you require an unchanging image, pin to one of the immutable tags (for example the db-specific `..._grype-..._db-...` tag or the `-release` tag).
 
 ## Badge
 
