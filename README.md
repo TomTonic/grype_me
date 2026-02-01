@@ -1,4 +1,6 @@
-# grype_me
+# ✊ grype_me
+
+![Vulnerabilities](https://img.shields.io/endpoint?url=https://gist.github.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype-badge.json)
 
 A lean GitHub Action to scan for vulnerabilities using [Anchore Grype](https://github.com/anchore/grype).
 
@@ -177,7 +179,7 @@ The action image is **rebuilt daily** with the latest Grype and vulnerability da
 ```
 
 <a name="daily-tag-updates"></a>
-### Daily tags updates
+### Daily tag updates
 
 The published container image is rebuilt daily to always contains the newest Grype release and the latest vulnerability database. As a result, moving tags are shifted to the new image every day: `latest`, `v1`, `v1.2`, and `v1.2.3`. By design, the patch level only refers to the patch level of this action, not including the vulnerability database.
 
@@ -223,8 +225,8 @@ This approach stores the badge data in a GitHub Gist, which your README referenc
 **Step 2:** Create a Personal Access Token
 
 1. Go to [GitHub Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens)
-2. Create a token with `gist` scope
-3. Add it as a repository secret named `GIST_TOKEN`
+2. Create a (classic) token with `gist` scope
+3. Copy the token value to a new repository secret named `GIST_TOKEN`
 
 **Step 3:** Add a workflow that updates the gist:
 
@@ -255,7 +257,7 @@ jobs:
           gistID: YOUR_GIST_ID  # Replace with your Gist ID
           filename: grype-badge.json
           label: vulnerabilities
-          message: ${{ steps.grype.outputs.cve-count }} found
+          message: ${{ steps.grype.outputs.cve-count }} vulnerabilities found
           valColorRange: ${{ steps.grype.outputs.cve-count }}
           maxColorRange: 10
           minColorRange: 0

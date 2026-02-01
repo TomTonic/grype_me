@@ -1,0 +1,100 @@
+name: Security Badge
+
+on:
+  schedule:
+    # GitHub Actions cron is UTC. 08:00 UTC daily.
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update-badge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Verify badge configuration
+        shell: bash
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ vars.GRYPE_BADGE_GIST_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$GIST_TOKEN" ]]; then
+            echo "Missing required secret: GIST_TOKEN" >&2
+            exit 1
+          fi
+          if [[ -z "$GIST_ID" ]]; then
+            echo "Missing required repository variable: GRYPE_BADGE_GIST_ID" >&2
+            exit 1
+          fi
+
+      - name: Run Grype scan (latest release)
+        id: grype_me
+        uses: TomTonic/grype_me@v1
+        with:
+          scan: 'latest_release'
+          fail-build: false
+
+      - name: Prepare badge payload
+        id: badge
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          total='${{ steps.grype_me.outputs.cve-count }}'
+          critical='${{ steps.grype_me.outputs.critical }}'
+          high='${{ steps.grype_me.outputs.high }}'
+          medium='${{ steps.grype_me.outputs.medium }}'
+          low='${{ steps.grype_me.outputs.low }}'
+          db_built='${{ steps.grype_me.outputs.db-version }}'
+
+          suffix=""
+          if [[ -n "$db_built" && ${#db_built} -ge 10 ]]; then
+            suffix=" (db date ${db_built:0:10})"
+          fi
+
+          message_parts=()
+          if [[ "$critical" != "0" ]]; then message_parts+=("${critical} critical"); fi
+          if [[ "$high" != "0" ]]; then message_parts+=("${high} high"); fi
+          if [[ "$medium" != "0" ]]; then message_parts+=("${medium} medium"); fi
+          if [[ "$low" != "0" ]]; then message_parts+=("${low} low"); fi
+
+          if [[ "$total" == "0" ]]; then
+            message="no vulnerabilities found${suffix}"
+            color="brightgreen"
+          else
+            if [[ ${#message_parts[@]} -eq 0 ]]; then
+              message="${total} other${suffix}"
+            else
+              message="$(IFS=' | '; echo "${message_parts[*]}")${suffix}"
+            fi
+            if [[ "$critical" != "0" ]]; then
+              color="critical"
+            elif [[ "$high" != "0" ]]; then
+              color="orange"
+            elif [[ "$medium" != "0" ]]; then
+              color="yellow"
+            else
+              color="yellowgreen"
+            fi
+          fi
+
+          echo "message=$message" >> "$GITHUB_OUTPUT"
+          echo "color=$color" >> "$GITHUB_OUTPUT"
+
+      - name: Update Gist (shields.io endpoint)
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: ${{ vars.GRYPE_BADGE_GIST_ID }}
+          filename: grype-badge.json
+          label: ✊ grype_me release
+          message: ${{ steps.badge.outputs.message }}
+          color: ${{ steps.badge.outputs.color }}
