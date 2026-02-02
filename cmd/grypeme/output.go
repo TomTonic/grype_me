@@ -53,6 +53,10 @@ func writeStepOutputs(file *os.File, stats VulnerabilityStats, output *GrypeOutp
 		"medium":        fmt.Sprintf("%d", stats.Medium),
 		"low":           fmt.Sprintf("%d", stats.Low),
 		"badge-url":     badgeURL,
+		"badge-date":    extractDBDate(output.DBBuilt()),
+		"badge-counts":  formatBadgeMessage(stats),
+		"badge-color":   determineBadgeColor(stats),
+		"badge-message": fmt.Sprintf("%s: %s CVEs", extractDBDate(output.DBBuilt()), formatBadgeMessage(stats)),
 	}
 
 	if jsonPath != "" {
@@ -82,14 +86,18 @@ func writeEnvironmentVariables(prefix string, stats VulnerabilityStats, output *
 	defer func() { _ = envFile.Close() }()
 
 	envVars := map[string]string{
-		"VERSION":    output.Descriptor.Version,
-		"DB_VERSION": output.DBBuilt(),
-		"CVE_COUNT":  fmt.Sprintf("%d", stats.Total),
-		"CRITICAL":   fmt.Sprintf("%d", stats.Critical),
-		"HIGH":       fmt.Sprintf("%d", stats.High),
-		"MEDIUM":     fmt.Sprintf("%d", stats.Medium),
-		"LOW":        fmt.Sprintf("%d", stats.Low),
-		"BADGE_URL":  badgeURL,
+		"VERSION":       output.Descriptor.Version,
+		"DB_VERSION":    output.DBBuilt(),
+		"CVE_COUNT":     fmt.Sprintf("%d", stats.Total),
+		"CRITICAL":      fmt.Sprintf("%d", stats.Critical),
+		"HIGH":          fmt.Sprintf("%d", stats.High),
+		"MEDIUM":        fmt.Sprintf("%d", stats.Medium),
+		"LOW":           fmt.Sprintf("%d", stats.Low),
+		"BADGE_URL":     badgeURL,
+		"BADGE_DATE":    extractDBDate(output.DBBuilt()),
+		"BADGE_COUNTS":  formatBadgeMessage(stats),
+		"BADGE_COLOR":   determineBadgeColor(stats),
+		"BADGE_MESSAGE": fmt.Sprintf("%s: %s CVEs", extractDBDate(output.DBBuilt()), formatBadgeMessage(stats)),
 	}
 
 	for key, value := range envVars {
@@ -233,7 +241,7 @@ func generateBadgeURL(stats VulnerabilityStats, label, dbBuilt string) string {
 	if dbBuilt != "" {
 		if dbDate := extractDBDate(dbBuilt); dbDate != "" {
 			dbDate = strings.ReplaceAll(dbDate, "-", "--") // Escape dashes for shields.io
-			message = fmt.Sprintf("%s (db date %s)", message, dbDate)
+			message = fmt.Sprintf("%s: %s CVEs", dbDate, message)
 		}
 	}
 
@@ -250,7 +258,7 @@ func generateBadgeURL(stats VulnerabilityStats, label, dbBuilt string) string {
 // Shows "none" if no vulnerabilities, otherwise shows counts by severity level.
 func formatBadgeMessage(stats VulnerabilityStats) string {
 	if stats.Total == 0 {
-		return "no vulnerabilities found"
+		return "0"
 	}
 
 	var parts []string

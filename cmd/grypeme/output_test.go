@@ -69,14 +69,14 @@ func TestGenerateBadgeURL(t *testing.T) {
 			stats:    VulnerabilityStats{Total: 0},
 			label:    "✊ grype__me release",
 			dbBuilt:  "2026-01-30T12:34:56Z",
-			contains: []string{"https://img.shields.io/badge/", "%E2%9C%8A%20grype__me%20release", "no%20vulnerabilities%20found", "brightgreen"},
+			contains: []string{"https://img.shields.io/badge/", "%E2%9C%8A%20grype__me%20release", "0%20CVEs", "brightgreen"},
 		},
 		{
 			name:     "critical vulnerabilities",
 			stats:    VulnerabilityStats{Total: 2, Critical: 2},
 			label:    "✊ grype__me image",
 			dbBuilt:  "2026-01-30",
-			contains: []string{"https://img.shields.io/badge/", "critical"},
+			contains: []string{"https://img.shields.io/badge/", "2%20critical%20CVEs"},
 		},
 		{
 			name:     "high vulnerabilities",
@@ -119,7 +119,7 @@ func TestFormatBadgeMessage(t *testing.T) {
 		stats VulnerabilityStats
 		want  string
 	}{
-		{"no vulnerabilities", VulnerabilityStats{Total: 0}, "no vulnerabilities found"},
+		{"no vulnerabilities", VulnerabilityStats{Total: 0}, "0"},
 		{"only critical", VulnerabilityStats{Total: 2, Critical: 2}, "2 critical"},
 		{"only high", VulnerabilityStats{Total: 3, High: 3}, "3 high"},
 		{"critical and high", VulnerabilityStats{Total: 5, Critical: 2, High: 3}, "2 critical | 3 high"},
