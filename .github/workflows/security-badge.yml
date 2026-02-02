@@ -35,11 +35,11 @@ jobs:
             exit 1
           fi
 
-#      - name: Checkout repository (with tags)
-#        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-#        with:
-#          fetch-depth: 0
-#          fetch-tags: true
+      - name: Checkout repository (with tags)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: grype_me latest_release
         id: grype_me
