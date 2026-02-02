@@ -101,6 +101,6 @@ jobs:
           auth: ${{ secrets.GIST_TOKEN }}
           gistID: ${{ vars.GRYPE_BADGE_GIST_ID }}
           filename: grype-badge.json
-          label: ✊ grype__me
-          message: ${{ steps.badge.outputs.message }} CVE's in latest__release
+          label: ✊ grype_me
+          message: ${{ steps.badge.outputs.message }} CVE's in latest release
           color: ${{ steps.badge.outputs.color }}
