@@ -14,13 +14,12 @@ jobs:
   update-badge:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (with tags)
-        uses: actions/checkout@v4
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
         with:
-          fetch-depth: 0
-          fetch-tags: true
+          egress-policy: audit
 
-      - name: Verify badge configuration
+      - name: Ensure required secrets and variables are set
         shell: bash
         env:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
@@ -36,7 +35,13 @@ jobs:
             exit 1
           fi
 
-      - name: Run Grype scan (latest release)
+#      - name: Checkout repository (with tags)
+#        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+#        with:
+#          fetch-depth: 0
+#          fetch-tags: true
+
+      - name: grype_me latest_release
         id: grype_me
         uses: TomTonic/grype_me@v1
         with:
@@ -56,9 +61,9 @@ jobs:
           low='${{ steps.grype_me.outputs.low }}'
           db_built='${{ steps.grype_me.outputs.db-version }}'
 
-          suffix=""
+          prefix=""
           if [[ -n "$db_built" && ${#db_built} -ge 10 ]]; then
-            suffix=" (db date ${db_built:0:10})"
+            prefix="${db_built:0:10}: "
           fi
 
           message_parts=()
@@ -68,13 +73,13 @@ jobs:
           if [[ "$low" != "0" ]]; then message_parts+=("${low} low"); fi
 
           if [[ "$total" == "0" ]]; then
-            message="no vulnerabilities found${suffix}"
+            message="${prefix}0"
             color="brightgreen"
           else
             if [[ ${#message_parts[@]} -eq 0 ]]; then
-              message="${total} other${suffix}"
+              message="${prefix}${total} other"
             else
-              message="$(IFS=' | '; echo "${message_parts[*]}")${suffix}"
+              message="${prefix}$(IFS=' | '; echo "${message_parts[*]}")"
             fi
             if [[ "$critical" != "0" ]]; then
               color="critical"
@@ -90,12 +95,12 @@ jobs:
           echo "message=$message" >> "$GITHUB_OUTPUT"
           echo "color=$color" >> "$GITHUB_OUTPUT"
 
-      - name: Update Gist (shields.io endpoint)
+      - name: Write badge data to gist
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
           gistID: ${{ vars.GRYPE_BADGE_GIST_ID }}
           filename: grype-badge.json
-          label: ✊ grype_me release
-          message: ${{ steps.badge.outputs.message }}
+          label: ✊ grype__me
+          message: ${{ steps.badge.outputs.message }} CVE's in latest__release
           color: ${{ steps.badge.outputs.color }}
