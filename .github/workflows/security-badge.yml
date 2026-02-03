@@ -48,53 +48,6 @@ jobs:
           scan: 'latest_release'
           fail-build: false
 
-#      - name: Prepare badge payload
-#        id: badge
-#        shell: bash
-#        run: |
-#          set -euo pipefail
-#
-#          total='${{ steps.grype_me.outputs.cve-count }}'
-#          critical='${{ steps.grype_me.outputs.critical }}'
-#          high='${{ steps.grype_me.outputs.high }}'
-#          medium='${{ steps.grype_me.outputs.medium }}'
-#          low='${{ steps.grype_me.outputs.low }}'
-#          db_built='${{ steps.grype_me.outputs.db-version }}'
-#
-#          prefix=""
-#          if [[ -n "$db_built" && ${#db_built} -ge 10 ]]; then
-#            prefix="${db_built:0:10}: "
-#          fi
-#
-#          message_parts=()
-#          if [[ "$critical" != "0" ]]; then message_parts+=("${critical} critical"); fi
-#          if [[ "$high" != "0" ]]; then message_parts+=("${high} high"); fi
-#          if [[ "$medium" != "0" ]]; then message_parts+=("${medium} medium"); fi
-#          if [[ "$low" != "0" ]]; then message_parts+=("${low} low"); fi
-#
-#          if [[ "$total" == "0" ]]; then
-#            message="${prefix}0"
-#            color="brightgreen"
-#          else
-#            if [[ ${#message_parts[@]} -eq 0 ]]; then
-#              message="${prefix}${total} other"
-#            else
-#              message="${prefix}$(IFS=' | '; echo "${message_parts[*]}")"
-#            fi
-#            if [[ "$critical" != "0" ]]; then
-#              color="critical"
-#            elif [[ "$high" != "0" ]]; then
-#              color="orange"
-#            elif [[ "$medium" != "0" ]]; then
-#              color="yellow"
-#            else
-#              color="yellowgreen"
-#            fi
-#          fi
-#
-#          echo "message=$message" >> "$GITHUB_OUTPUT"
-#          echo "color=$color" >> "$GITHUB_OUTPUT"
-
       - name: Write badge data to gist
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
@@ -105,13 +58,3 @@ jobs:
           message: ${{ steps.grype_me.outputs.badge-message }} in latest release
 # alt:    message: "${{ steps.grype_me.outputs.badge-date }}: ${{ steps.grype_me.outputs.badge-counts }} CVEs in latest release"
           color: ${{ steps.grype_me.outputs.badge-color }}
-
-#      - name: Write badge data to gist
-#        uses: schneegans/dynamic-badges-action@v1.7.0
-#        with:
-#          auth: ${{ secrets.GIST_TOKEN }}
-#          gistID: ${{ vars.GRYPE_BADGE_GIST_ID }}
-#          filename: grype-badge.json
-#          label: ✊ grype_me
-#          message: ${{ steps.badge.outputs.message }} CVE's in latest release
-#          color: ${{ steps.badge.outputs.color }}
