@@ -1,6 +1,7 @@
 # ✊ grype_me
 
-![Vulnerabilities](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype-badge.json)
+![Vulnerabilities of Action](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype-badge.json)
+![Vulnerabilities of Docker Image](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype-badge-image.json)
 
 A lean GitHub Action to scan for vulnerabilities using [Anchore Grype](https://github.com/anchore/grype).
 

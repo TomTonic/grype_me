@@ -41,7 +41,7 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: grype_me latest_release
+      - name: grype_me latest_release of GitHub Action
         id: grype_me
         uses: TomTonic/grype_me@v1
         with:
@@ -55,6 +55,23 @@ jobs:
           gistID: ${{ vars.GRYPE_BADGE_GIST_ID }}
           filename: grype-badge.json
           label: ✊ grype_me
-          message: ${{ steps.grype_me.outputs.badge-message }} in latest release
+          message: ${{ steps.grype_me.outputs.badge-message }} in latest action release
 # alt:    message: "${{ steps.grype_me.outputs.badge-date }}: ${{ steps.grype_me.outputs.badge-counts }} CVEs in latest release"
           color: ${{ steps.grype_me.outputs.badge-color }}
+
+      - name: grype_me nightly docker image
+        id: grype_me_image
+        uses: TomTonic/grype_me@v1
+        with:
+          image: ghcr.io/tomtonic/grype_me:latest
+          fail-build: false
+
+      - name: Write second badge data to gist
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: ${{ vars.GRYPE_BADGE_GIST_ID }}
+          filename: grype-badge-image.json
+          label: ✊ grype_me
+          message: ${{ steps.grype_me_image.outputs.badge-message }} in nightly docker image
+          color: ${{ steps.grype_me_image.outputs.badge-color }}
