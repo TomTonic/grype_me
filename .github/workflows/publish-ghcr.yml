@@ -222,6 +222,8 @@ jobs:
           context: .
           push: true
           tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            GRYPE_CACHEBUST=grype-${{ needs.grype-release.outputs.grype_version }}_db-${{ needs.grype-release.outputs.db_built }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

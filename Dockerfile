@@ -1,5 +1,6 @@
 ARG GOLANG_ALPINE_TAG=1.25.6-alpine3.23
 ARG ALPINE_VERSION=3.23
+ARG GRYPE_CACHEBUST=0
 
 FROM golang:${GOLANG_ALPINE_TAG} AS builder
 
@@ -22,15 +23,18 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o grype-action ./cm
 # Installer stage: fetch grype with signature verification (cosign present only here)
 FROM alpine:${ALPINE_VERSION} AS grype-installer
 
+ARG GRYPE_CACHEBUST
+
 RUN apk add --no-cache ca-certificates curl bash cosign
 
-RUN curl -sSfL https://get.anchore.io/grype -o /tmp/install-grype.sh && \
+RUN echo "$GRYPE_CACHEBUST" >/dev/null && \
+    curl -sSfL https://get.anchore.io/grype -o /tmp/install-grype.sh && \
     sh /tmp/install-grype.sh -v -b /tmp/grype && \
     rm /tmp/install-grype.sh && \
     /tmp/grype/grype version
 
 # Download vulnerability database at build time for faster runtime
-RUN /tmp/grype/grype db update
+RUN echo "$GRYPE_CACHEBUST" >/dev/null && /tmp/grype/grype db update
 
 # Final stage - use same Alpine version as builder for consistency
 FROM alpine:${ALPINE_VERSION}
