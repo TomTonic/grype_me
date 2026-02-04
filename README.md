@@ -1,9 +1,9 @@
 # ✊ grype_me
 
-![Vulnerabilities of Action](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype-badge.json)
-![Vulnerabilities of Docker Image](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype-badge-image.json)
+![Vulnerabilities of Action](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype_me-badge-latest-project-release.json)
+![Vulnerabilities of Docker Image](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype_me-badge-daily-docker-image.json)
 
-A lean GitHub Action to scan for vulnerabilities using [Anchore Grype](https://github.com/anchore/grype).
+An easy to use GitHub Action to scan the supply chain of your project for known vulnerabilities using [Anchore Grype](https://github.com/anchore/grype) and generate badges.
 
 ## Quick Start
 
@@ -11,8 +11,19 @@ A lean GitHub Action to scan for vulnerabilities using [Anchore Grype](https://g
 - uses: actions/checkout@v4
   with: { fetch-depth: 0, fetch-tags: true }
 - uses: TomTonic/grype_me@v1
-  with: { scan: 'latest_release', fail-build: true, severity-cutoff: 'high' }
+  id: grype_me
+  with: { scan: 'latest_release', fail-build: false }
+- uses: schneegans/dynamic-badges-action@v1.7.0
+  with:
+    auth: ${{ secrets.GIST_TOKEN }}
+    gistID: ${{ vars.GRYPE_BADGE_GIST_ID }}
+    filename: grype-badge.json
+    label: ✊ grype_me
+    message: ${{ steps.grype_me.outputs.badge-message }} in latest release
+    color: ${{ steps.grype_me.outputs.badge-color }}
 ```
+
+For a full example see how this projects ![runs a daily scan](./.github/workflows/security-badge.yml) to update ![the two badges in this Action's README.md](./blame/main/README.md#L3-L4).
 
 > **Note**: The default scan mode is `latest_release`, which scans your highest semver tag. If your repo has no tags yet, use `scan: 'head'` instead.
 
@@ -31,7 +42,7 @@ A lean GitHub Action to scan for vulnerabilities using [Anchore Grype](https://g
 
 ## How It Works
 
-This action runs inside a Docker container with Grype and a pre-downloaded vulnerability database. It supports two modes:
+This action runs Grype with a pre-downloaded vulnerability database inside a Docker container. It supports two modes:
 
 | Mode | Input | Description |
 |------|-------|-------------|

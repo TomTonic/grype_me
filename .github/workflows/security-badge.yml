@@ -1,5 +1,5 @@
 ---
-name: Security Badge
+name: Refresh grype_me Security Badges
 
 on:
   schedule:
@@ -38,11 +38,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-          fetch-tags: true
+          fetch-tags: true # need tags for latest_release scan
 
       - name: grype_me latest_release of GitHub Action
-        id: grype_me
-        uses: TomTonic/grype_me@v1
+        id: grype_me_release
+        uses: TomTonic/grype_me@v1 # don't pin, rolling tag changes daily
         with:
           scan: 'latest_release'
           fail-build: false
@@ -52,14 +52,14 @@ jobs:
         with:
           auth: ${{ secrets.GIST_TOKEN }}
           gistID: ${{ vars.GRYPE_BADGE_GIST_ID }}
-          filename: grype-badge.json
+          filename: grype_me-badge-latest-project-release.json
           label: ✊ grype_me
-          message: ${{ steps.grype_me.outputs.badge-message }} in latest action release
-          color: ${{ steps.grype_me.outputs.badge-color }}
+          message: ${{ steps.grype_me_release.outputs.badge-message }} in latest Action release
+          color: ${{ steps.grype_me_release.outputs.badge-color }}
 
       - name: grype_me nightly docker image
         id: grype_me_image
-        uses: TomTonic/grype_me@v1
+        uses: TomTonic/grype_me@v1 # don't pin, rolling tag changes daily
         with:
           image: ghcr.io/tomtonic/grype_me:latest
           fail-build: false
@@ -69,7 +69,7 @@ jobs:
         with:
           auth: ${{ secrets.GIST_TOKEN }}
           gistID: ${{ vars.GRYPE_BADGE_GIST_ID }}
-          filename: grype-badge-image.json
+          filename: grype_me-badge-daily-docker-image.json
           label: ✊ grype_me
           message: ${{ steps.grype_me_image.outputs.badge-message }} in nightly docker image
           color: ${{ steps.grype_me_image.outputs.badge-color }}
