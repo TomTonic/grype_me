@@ -155,8 +155,13 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: Harden + Checkout
-        uses: ./.github/actions/harden-checkout
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
@@ -213,6 +218,10 @@ jobs:
           echo "Generated tags: $TAGS"
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
           echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+          # Provide a short output containing the cachebust build-arg so later steps can reference it
+          BUILD_CACHEBUST="${IMAGE_NAME}:dummy" || true
+          BUILD_CACHEBUST="grype-${GRYPE_VERSION}_db-${DB_BUILT}"
+          echo "build_cachebust=$BUILD_CACHEBUST" >> "$GITHUB_OUTPUT"
 
       - name: Build image (load for test)
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
@@ -222,7 +231,7 @@ jobs:
           load: true
           tags: ${{ steps.tags.outputs.tags }}
           build-args: |
-            GRYPE_CACHEBUST=grype-${{ needs.grype-release.outputs.grype_version }}_db-${{ needs.grype-release.outputs.db_built }}
+            GRYPE_CACHEBUST=${{ steps.tags.outputs.build_cachebust }}
           cache-from: type=gha,scope=grype_me
           cache-to: type=gha,mode=max,scope=grype_me
 
@@ -262,8 +271,13 @@ jobs:
       contents: read
       packages: read
     steps:
-      - name: Harden + Checkout
-        uses: ./.github/actions/harden-checkout
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Wait for GHCR propagation
         run: sleep 10
