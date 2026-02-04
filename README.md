@@ -23,7 +23,7 @@ An easy to use GitHub Action to scan the supply chain of your project for known 
     color: ${{ steps.grype_me.outputs.badge-color }}
 ```
 
-For a full example see how this projects [runs a daily scan](./.github/workflows/security-badge.yml) to update [the two badges in this Action's README.md](./blame/main/README.md#L3-L4).
+For a full example see how this projects [runs a daily scan](./.github/workflows/security-badge.yml) to update [the two badges in this Action's README.md](https://github.com/TomTonic/grype_me/blame/main/README.md#L3-L4).
 
 > **Note**: The default scan mode is `latest_release`, which scans your highest semver tag. If your repo has no tags yet, use `scan: 'head'` instead.
 
