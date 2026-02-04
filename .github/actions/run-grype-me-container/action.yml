@@ -1,0 +1,115 @@
+---
+name: Run grype_me container
+description: Pull (optional) and run a grype_me container image, then surface action outputs and validate result file.
+inputs:
+  image-ref:
+    description: Full image reference (e.g. ghcr.io/org/repo:tag or local tag)
+    required: true
+  pull:
+    description: Whether to docker pull before running
+    required: false
+    default: 'true'
+  scan:
+    description: Value for INPUT_SCAN
+    required: false
+    default: 'head'
+  output-file:
+    description: Value for INPUT_OUTPUT-FILE (written into $GITHUB_WORKSPACE)
+    required: false
+    default: 'grype-results.json'
+  variable-prefix:
+    description: Value for INPUT_VARIABLE-PREFIX
+    required: false
+    default: 'GRYPE_'
+  fail-build:
+    description: Value for INPUT_FAIL-BUILD
+    required: false
+    default: 'false'
+  severity-cutoff:
+    description: Value for INPUT_SEVERITY-CUTOFF
+    required: false
+    default: 'medium'
+  only-fixed:
+    description: Value for INPUT_ONLY-FIXED
+    required: false
+    default: 'false'
+  db-update:
+    description: Value for INPUT_DB-UPDATE
+    required: false
+    default: 'false'
+  debug:
+    description: Value for INPUT_DEBUG
+    required: false
+    default: 'false'
+  outputs-file:
+    description: Host-side filename for container to write GITHUB_OUTPUT into
+    required: false
+    default: 'github_output.txt'
+runs:
+  using: composite
+  steps:
+    - name: Pull (optional) and run container
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        IMAGE_REF='${{ inputs.image-ref }}'
+        PULL='${{ inputs.pull }}'
+        HOST_OUT_FILE='${{ inputs.outputs-file }}'
+        RESULTS_FILE='${{ inputs.output-file }}'
+
+        if [[ -z "${GITHUB_WORKSPACE:-}" ]]; then
+          echo "ERROR: GITHUB_WORKSPACE is not set" >&2
+          exit 1
+        fi
+
+        mkdir -p "$GITHUB_WORKSPACE"
+        rm -f "$GITHUB_WORKSPACE/$HOST_OUT_FILE" "$GITHUB_WORKSPACE/$RESULTS_FILE"
+
+        if [[ "$PULL" == "true" ]]; then
+          echo "Pulling ${IMAGE_REF}"
+          docker pull "${IMAGE_REF}"
+        fi
+
+        echo "Running ${IMAGE_REF}"
+        docker run --rm \
+          -v "$GITHUB_WORKSPACE:/github/workspace" \
+          -e GITHUB_WORKSPACE=/github/workspace \
+          -e GITHUB_REPOSITORY="${GITHUB_REPOSITORY}" \
+          -e GITHUB_OUTPUT="/github/workspace/${HOST_OUT_FILE}" \
+          -e INPUT_SCAN='${{ inputs.scan }}' \
+          -e INPUT_OUTPUT-FILE="${RESULTS_FILE}" \
+          -e INPUT_VARIABLE-PREFIX='${{ inputs.variable-prefix }}' \
+          -e INPUT_FAIL-BUILD='${{ inputs.fail-build }}' \
+          -e INPUT_SEVERITY-CUTOFF='${{ inputs.severity-cutoff }}' \
+          -e INPUT_ONLY-FIXED='${{ inputs.only-fixed }}' \
+          -e INPUT_DB-UPDATE='${{ inputs.db-update }}' \
+          -e INPUT_DEBUG='${{ inputs.debug }}' \
+          "${IMAGE_REF}"
+
+        if [[ ! -f "$GITHUB_WORKSPACE/$HOST_OUT_FILE" ]]; then
+          echo "ERROR: Expected outputs file not found: $GITHUB_WORKSPACE/$HOST_OUT_FILE" >&2
+          exit 1
+        fi
+
+        echo "=== Action Outputs (raw) ==="
+        cat "$GITHUB_WORKSPACE/$HOST_OUT_FILE"
+
+        while IFS='=' read -r key value; do
+          [[ -z "${key:-}" ]] && continue
+          echo "${key}=${value}" >> "$GITHUB_OUTPUT"
+        done < "$GITHUB_WORKSPACE/$HOST_OUT_FILE"
+
+        if [[ ! -f "$GITHUB_WORKSPACE/$RESULTS_FILE" ]]; then
+          echo "ERROR: Expected results file not found: $GITHUB_WORKSPACE/$RESULTS_FILE" >&2
+          exit 1
+        fi
+
+        if [[ -z "${grype-version:-}" && -z "${GRYPE_VERSION:-}" ]]; then
+          # We can't reliably read the step outputs from inside this bash process,
+          # but we can at least ensure the key exists in the raw output file.
+          if ! grep -q '^grype-version=' "$GITHUB_WORKSPACE/$HOST_OUT_FILE"; then
+            echo "ERROR: grype-version output missing" >&2
+            exit 1
+          fi
+        fi

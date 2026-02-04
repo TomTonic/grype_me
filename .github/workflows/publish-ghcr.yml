@@ -12,14 +12,16 @@ permissions:
   contents: read
 
 jobs:
-  ci:
-    name: Run CI
-    uses: TomTonic/grype_me/.github/workflows/ci.yml@main
-    permissions:
-      contents: read
+  lint:
+    name: Lint
+    uses: ./.github/workflows/_ci-lint.yml
+
+  test:
+    name: Test
+    uses: ./.github/workflows/_ci-test.yml
 
   grype-release:
-    name: Data for Tags and Publish Decision
+    name: Data for Tags and Publishing Decision
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -147,19 +149,14 @@ jobs:
   publish:
     name: Publish to GHCR
     runs-on: ubuntu-latest
-    needs: [ci, grype-release]
+    needs: [lint, test, grype-release]
     if: github.event_name == 'release' || needs.grype-release.outputs.publish == 'true'
     permissions:
       contents: read
       packages: write
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
-        with:
-          egress-policy: audit
-
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Harden + Checkout
+        uses: ./.github/actions/harden-checkout
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
@@ -215,17 +212,47 @@ jobs:
 
           echo "Generated tags: $TAGS"
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push image
+      - name: Build image (load for test)
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           context: .
-          push: true
+          push: false
+          load: true
           tags: ${{ steps.tags.outputs.tags }}
           build-args: |
             GRYPE_CACHEBUST=grype-${{ needs.grype-release.outputs.grype_version }}_db-${{ needs.grype-release.outputs.db_built }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=grype_me
+          cache-to: type=gha,mode=max,scope=grype_me
+
+      - name: Test built image (pre-push)
+        id: grype-scan-prepush
+        uses: ./.github/actions/run-grype-me-container
+        with:
+          image-ref: ${{ steps.tags.outputs.image_name }}:latest
+          pull: 'false'
+          scan: head
+          output-file: grype-results-prepush.json
+          variable-prefix: GRYPE_PREPUSH_
+          fail-build: 'false'
+          severity-cutoff: medium
+          only-fixed: 'false'
+          db-update: 'false'
+          debug: 'false'
+          outputs-file: github_output_prepush.txt
+
+      - name: Push tested tags
+        shell: bash
+        env:
+          TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra tags <<< "$TAGS"
+          for t in "${tags[@]}"; do
+            echo "Pushing $t"
+            docker push "$t"
+          done
 
   verify-published:
     name: Verify Published Image
@@ -235,13 +262,8 @@ jobs:
       contents: read
       packages: read
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
-        with:
-          egress-policy: audit
-
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Harden + Checkout
+        uses: ./.github/actions/harden-checkout
 
       - name: Wait for GHCR propagation
         run: sleep 10
@@ -253,44 +275,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull and run published image (v1 tag)
+      - name: Pull and run published image (latest)
         id: grype-scan-published
-        run: |
-          set -euo pipefail
-
-          IMAGE_NAME="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
-          IMAGE_TAG="latest"
-          IMAGE_REF="${IMAGE_NAME}:${IMAGE_TAG}"
-
-          echo "Pulling ${IMAGE_REF}"
-          docker pull "${IMAGE_REF}"
-
-          echo "Running ${IMAGE_REF}"
-          docker run --rm \
-            -v "${GITHUB_WORKSPACE}:/github/workspace" \
-            -e GITHUB_WORKSPACE=/github/workspace \
-            -e GITHUB_REPOSITORY="${GITHUB_REPOSITORY}" \
-            -e GITHUB_OUTPUT=/github/workspace/github_output_published.txt \
-            -e INPUT_SCAN=head \
-            -e INPUT_OUTPUT-FILE=grype-results-published.json \
-            -e INPUT_VARIABLE-PREFIX=GRYPE_PUBLISHED_ \
-            -e INPUT_FAIL-BUILD=false \
-            -e INPUT_SEVERITY-CUTOFF=medium \
-            -e INPUT_ONLY-FIXED=false \
-            -e INPUT_DB-UPDATE=false \
-            -e INPUT_DEBUG=false \
-            "${IMAGE_REF}"
-
-          if [ -f "${GITHUB_WORKSPACE}/github_output_published.txt" ]; then
-            echo "=== Action Outputs (published image) ==="
-            cat "${GITHUB_WORKSPACE}/github_output_published.txt"
-            while IFS='=' read -r key value; do
-              echo "${key}=${value}" >> "$GITHUB_OUTPUT"
-            done < "${GITHUB_WORKSPACE}/github_output_published.txt"
-          else
-            echo "ERROR: Expected GITHUB_OUTPUT file not found" >&2
-            exit 1
-          fi
+        uses: ./.github/actions/run-grype-me-container
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:latest
+          pull: 'true'
+          scan: head
+          output-file: grype-results-published.json
+          variable-prefix: GRYPE_PUBLISHED_
+          fail-build: 'false'
+          severity-cutoff: medium
+          only-fixed: 'false'
+          db-update: 'false'
+          debug: 'false'
+          outputs-file: github_output_published.txt
 
       - name: Verify outputs
         run: |

@@ -19,13 +19,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
-        with:
-          egress-policy: audit
-
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Harden + Checkout
+        uses: ./.github/actions/harden-checkout
 
       - name: Log in to GHCR (pull)
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
@@ -36,41 +31,19 @@ jobs:
 
       - name: Pull and run published image
         id: grype-scan
-        env:
-          IMAGE_TAG: ${{ inputs.image-tag }}
-        run: |
-          set -euo pipefail
-
-          IMAGE_NAME="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
-          IMAGE_REF="${IMAGE_NAME}:${IMAGE_TAG}"
-
-          echo "Pulling ${IMAGE_REF}"
-          docker pull "${IMAGE_REF}"
-
-          echo "Running ${IMAGE_REF}"
-          docker run --rm \
-            -v "${GITHUB_WORKSPACE}:/github/workspace" \
-            -e GITHUB_WORKSPACE=/github/workspace \
-            -e GITHUB_REPOSITORY="${GITHUB_REPOSITORY}" \
-            -e GITHUB_OUTPUT=/github/workspace/github_output_e2e.txt \
-            -e INPUT_SCAN=head \
-            -e INPUT_OUTPUT-FILE=grype-results.json \
-            -e INPUT_VARIABLE-PREFIX=GRYPE_ \
-            -e INPUT_FAIL-BUILD=false \
-            -e INPUT_SEVERITY-CUTOFF=medium \
-            -e INPUT_ONLY-FIXED=false \
-            -e INPUT_DB-UPDATE=false \
-            -e INPUT_DEBUG=false \
-            "${IMAGE_REF}"
-
-          if [ -f "${GITHUB_WORKSPACE}/github_output_e2e.txt" ]; then
-            while IFS='=' read -r key value; do
-              echo "${key}=${value}" >> "$GITHUB_OUTPUT"
-            done < "${GITHUB_WORKSPACE}/github_output_e2e.txt"
-          else
-            echo "ERROR: Expected GITHUB_OUTPUT file not found" >&2
-            exit 1
-          fi
+        uses: ./.github/actions/run-grype-me-container
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:${{ inputs.image-tag }}
+          pull: 'true'
+          scan: head
+          output-file: grype-results.json
+          variable-prefix: GRYPE_
+          fail-build: 'false'
+          severity-cutoff: medium
+          only-fixed: 'false'
+          db-update: 'false'
+          debug: 'false'
+          outputs-file: github_output_e2e.txt
 
       - name: Display scan results
         run: |
