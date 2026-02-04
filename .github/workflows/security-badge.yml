@@ -37,8 +37,10 @@ jobs:
       - name: Checkout repository (with tags)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          # fetch-depth: 0 (non-default) - fetch full history to ensure tag lookups work correctly
           fetch-depth: 0
-          fetch-tags: true # need tags for latest_release scan
+          # fetch-tags: true (non-default) - need tags to detect latest_release for the badge
+          fetch-tags: true
 
       - name: grype_me latest_release of GitHub Action
         id: grype_me_release
