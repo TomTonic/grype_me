@@ -293,7 +293,7 @@ jobs:
         id: grype-scan-published
         uses: ./.github/actions/run-grype-me-container
         with:
-          image-ref: ghcr.io/${{ github.repository }}:latest
+          image-ref: ghcr.io/tomtonic/grype_me:latest
           pull: 'true'
           scan: head
           output-file: grype-results-published.json
