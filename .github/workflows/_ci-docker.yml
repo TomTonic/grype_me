@@ -1,0 +1,59 @@
+---
+name: CI / Docker
+
+'on':
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  docker:
+    name: Docker Build + Integration Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden + Checkout
+        uses: ./.github/actions/harden-checkout
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build Docker image (for integration test)
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: grype_me:local-test
+          cache-from: type=gha,scope=grype_me
+          cache-to: type=gha,mode=max,scope=grype_me
+
+      - name: Run integration test (published-container simulation)
+        id: grype-scan
+        uses: ./.github/actions/run-grype-me-container
+        with:
+          image-ref: grype_me:local-test
+          pull: 'false'
+          # grype_me input parameters:
+          scan: head
+          output-file: grype-results.json
+          variable-prefix: GRYPE_
+          fail-build: 'false'
+          severity-cutoff: medium
+          only-fixed: 'false'
+          db-update: 'false'
+          debug: 'false'
+          outputs-file: github_output_ci.txt
+
+      - name: Results preview
+        run: head -50 grype-results.json || true
+
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: grype-scan-results
+          path: grype-results.json
+          retention-days: 7
