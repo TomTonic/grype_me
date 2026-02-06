@@ -306,20 +306,17 @@ jobs:
           outputs-file: github_output_published.txt
 
       - name: Verify outputs
-        run: |
-          echo "=== Published Image Test Results ==="
-          echo "Grype Version: ${{ steps.grype-scan-published.outputs.grype-version }}"
-          echo "Database Version: ${{ steps.grype-scan-published.outputs.db-version }}"
-          echo "Total CVEs: ${{ steps.grype-scan-published.outputs.cve-count }}"
-
-          if [ -z "${{ steps.grype-scan-published.outputs.grype-version }}" ]; then
-            echo "ERROR: Grype version output is empty (published image)" >&2
-            exit 1
-          fi
-
-          if [ ! -f grype-results-published.json ]; then
-            echo "ERROR: Output file grype-results-published.json not found" >&2
-            exit 1
-          fi
-
-          echo "✓ Published image (latest) works correctly"
+        id: verify-published
+        uses: ./.github/actions/run-grype-me-container
+        with:
+          image-ref: ghcr.io/tomtonic/grype_me:latest
+          pull: 'true'
+          scan: head
+          output-file: grype-results-published.json
+          variable-prefix: GRYPE_PUBLISHED_VERIFY_
+          fail-build: 'false'
+          severity-cutoff: medium
+          only-fixed: 'false'
+          db-update: 'false'
+          debug: 'false'
+          outputs-file: github_output_published_verify.txt
