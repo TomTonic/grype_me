@@ -34,7 +34,7 @@ RUN echo "$GRYPE_CACHEBUST" >/dev/null && \
 # Download vulnerability database at build time for faster runtime
 RUN echo "$GRYPE_CACHEBUST" >/dev/null && /tmp/grype/grype db update
 
-# Final stage - use same Alpine version as builder for consistency
+# Final stage - copy grype, the database, and the built application into a minimal image
 FROM alpine:3.23
 
 # Install runtime dependencies (git needed for repo scans)

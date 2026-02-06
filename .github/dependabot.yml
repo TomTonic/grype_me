@@ -12,7 +12,7 @@ updates:
     reviewers:
       - TomTonic
     labels:
-      - dependencies
+      - go-deps
     commit-message:
       prefix: "deps-upd"
 
@@ -31,3 +31,9 @@ updates:
     directory: /
     schedule:
       interval: daily
+    reviewers:
+      - TomTonic
+    labels:
+      - docker
+    commit-message:
+      prefix: "docker-upd"
