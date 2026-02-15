@@ -45,4 +45,4 @@ jobs:
       - name: Run yamllint
         run: |
           yamllint -c .yamllint .github/workflows/ action.yml \
-            example-workflow.yml .github/actions/
+            .github/actions/
