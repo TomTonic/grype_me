@@ -1,6 +1,8 @@
 ---
-name: 'Grype-scan Me'
-description: 'Scan your repository for vulnerabilities using Anchore Grype (software supply chain security)'
+name: 'grype_me'
+description: >-
+  An easy to use Action to scan the supply chain of your project for known
+  vulnerabilities using Anchore Grype and generate badges.
 branding:
   icon: 'shield'
   color: 'blue'
@@ -23,7 +25,7 @@ inputs:
   # === Artifact-based scanning (mutually exclusive with 'scan') ===
   image:
     description: >-
-      Container image to scan (e.g., 'myapp:latest', 'ghcr.io/org/app:v1').
+      Container image to scan (e.g., 'myapp:latest', 'ghcr.io/org/app:v1.2.3').
       The image must be available locally (pulled or built) or in a registry.
       Mutually exclusive with scan/path/sbom.
     required: false
@@ -59,11 +61,6 @@ inputs:
     description: 'Path to save grype''s JSON scan results (optional)'
     required: false
     default: ''
-  variable-prefix:
-    description: >-
-      Prefix for environment variable names (default: "GRYPE_")
-    required: false
-    default: 'GRYPE_'
   only-fixed:
     description: >-
       Only report vulnerabilities that have a fix available.
@@ -82,14 +79,27 @@ inputs:
       Warning: may expose sensitive data in logs.
     required: false
     default: 'false'
-  badge-label:
+  gist-token:
     description: >-
-      Label text for the generated shields.io badge URL.
-      Default: auto-generated as '✊ grype_me <mode>', where
-      <mode> is 'release', 'head', 'image', or 'path'.
-      Set to override with custom text.
-      Underscores and hyphens must be escaped for proper
-      rendering by shields.io.
+      A GitHub personal access token (classic) with 'gist' scope.
+      Required for uploading the badge JSON and scan report to a gist.
+      Store as a repository secret (e.g., secrets.GIST_TOKEN).
+    required: false
+    default: ''
+  gist-id:
+    description: >-
+      The ID of the gist to update with badge JSON and scan report.
+      Create a gist manually, then copy the ID from the URL
+      (e.g., https://gist.github.com/user/<this-id>).
+      Required when gist-token is set.
+    required: false
+    default: ''
+  gist-filename:
+    description: >-
+      Base filename for files stored in the gist. The action will create
+      two files: '<name>-badge.json' (shields.io endpoint) and
+      '<name>-report.md' (detailed scan report). If empty, the scan
+      mode is used (e.g., 'release-badge.json', 'release-report.md').
     required: false
     default: ''
 
@@ -112,9 +122,16 @@ outputs:
     description: 'Path to the JSON output file (if output-file was specified)'
   badge-url:
     description: >-
-      shields.io URL to create a badge showing a vulnerability summary.
-      Color indicates severity: green (none), yellowgreen (low),
-      yellow (medium), orange (high), red (critical).
+      shields.io badge URL. When gist integration is configured, this is a
+      dynamic endpoint badge pointing to the gist JSON. Otherwise, it is
+      a static shields.io URL. Color indicates severity: green (none),
+      yellowgreen (low), yellow (medium), orange (high), red (critical).
+  report-url:
+    description: >-
+      URL to the detailed Markdown scan report stored in the gist.
+      Only set when gist-token and gist-id are configured.
+      Can be used as the badge link target so clicking the badge
+      opens the full vulnerability report.
 
 runs:
   using: 'docker'
