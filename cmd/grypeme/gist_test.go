@@ -98,7 +98,9 @@ func TestUpdateGist_Success(t *testing.T) {
 func TestUpdateGist_APIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprint(w, `{"message":"Not Found"}`)
+		if _, err := fmt.Fprint(w, `{"message":"Not Found"}`); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -123,7 +125,9 @@ func TestUpdateGist_APIError(t *testing.T) {
 func TestUpdateGist_Unauthorized(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprint(w, `{"message":"Bad credentials"}`)
+		if _, err := fmt.Fprint(w, `{"message":"Bad credentials"}`); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	}))
 	defer server.Close()
 
