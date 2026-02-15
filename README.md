@@ -1,7 +1,7 @@
 # ✊ grype_me
 
-[![Vulnerabilities of Action](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype_me-action_release.json)](https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype_me-action_release.md)
-[![Vulnerabilities of Docker Image](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype_me-docker_image.json)](https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype_me-docker_image.md)
+[![Vulnerabilities of Action](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype_me-action_release.json)](https://gist.github.com/TomTonic/e0a34e0c03120db2400fc0480169498c#file-grype-me-action-release-md)
+[![Vulnerabilities of Docker Image](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype_me-docker_image.json)](https://gist.github.com/TomTonic/e0a34e0c03120db2400fc0480169498c#file-grype-me-docker-image-md)
 
 An easy to use GitHub Action to scan the supply chain of your project for known vulnerabilities using [Anchore Grype](https://github.com/anchore/grype) and generate badges with detailed reports.
 
@@ -115,10 +115,10 @@ This writes three files to the gist:
 After the first workflow run, add the badge to your README:
 
 ```markdown
-[![Vulnerabilities](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/YOUR_USER/YOUR_GIST_ID/raw/my-project.json)](https://gist.githubusercontent.com/YOUR_USER/YOUR_GIST_ID/raw/my-project.md)
+[![Vulnerabilities](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/YOUR_USER/YOUR_GIST_ID/raw/my-project.json)](https://gist.github.com/YOUR_USER/YOUR_GIST_ID#file-my-project-md)
 ```
 
-The badge links to the detailed Markdown report. Clicking it shows the full CVE breakdown.
+The badge links to the rendered gist report (not the raw file view). Clicking it shows the full CVE breakdown.
 
 #### Setup
 
@@ -176,7 +176,7 @@ The badge links to the detailed Markdown report. Clicking it shows the full CVE 
 | `db-version` | Vulnerability database version |
 | `json-output` | Path to output file (if `output-file` set) |
 | `badge-url` | shields.io badge URL (dynamic endpoint when gist configured, static otherwise) |
-| `report-url` | URL to the detailed Markdown report in the gist |
+| `report-url` | URL to the rendered gist report section (`gist.github.com/...#file-...`) |
 
 ## Performance
 
