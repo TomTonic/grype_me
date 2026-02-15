@@ -31,10 +31,7 @@ func TestGrypeOutputDBBuilt(t *testing.T) {
 func TestGrypeOutputJSONMarshaling(t *testing.T) {
 	original := &GrypeOutput{
 		Matches: []GrypeMatch{
-			{Vulnerability: struct {
-				ID       string `json:"id"`
-				Severity string `json:"severity"`
-			}{ID: "CVE-2021-1234", Severity: "High"}},
+			makeMatch("CVE-2021-1234", "High", "openssl", "1.1.1", []string{"1.1.2"}, "Buffer overflow", "https://nvd.nist.gov"),
 		},
 	}
 	original.Descriptor.Version = "0.106.0"
@@ -56,10 +53,33 @@ func TestGrypeOutputJSONMarshaling(t *testing.T) {
 	if unmarshaled.DBBuilt() != "2024-01-01" {
 		t.Errorf("DBBuilt() = %v, want 2024-01-01", unmarshaled.DBBuilt())
 	}
+	m := unmarshaled.Matches[0]
+	if m.Vulnerability.ID != "CVE-2021-1234" {
+		t.Errorf("ID = %v, want CVE-2021-1234", m.Vulnerability.ID)
+	}
+	if m.Artifact.Name != "openssl" {
+		t.Errorf("Artifact.Name = %v, want openssl", m.Artifact.Name)
+	}
+	if m.Vulnerability.Description != "Buffer overflow" {
+		t.Errorf("Description = %v, want Buffer overflow", m.Vulnerability.Description)
+	}
 }
 
 func TestGrypeMatchStructure(t *testing.T) {
-	jsonData := `{"vulnerability": {"id": "CVE-2023-45678", "severity": "Critical"}}`
+	jsonData := `{
+		"vulnerability": {
+			"id": "CVE-2023-45678",
+			"severity": "Critical",
+			"description": "A serious flaw",
+			"dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2023-45678",
+			"fix": {"versions": ["2.0.1"], "state": "fixed"}
+		},
+		"artifact": {
+			"name": "libfoo",
+			"version": "1.9.0",
+			"type": "deb"
+		}
+	}`
 
 	var match GrypeMatch
 	if err := json.Unmarshal([]byte(jsonData), &match); err != nil {
@@ -71,6 +91,21 @@ func TestGrypeMatchStructure(t *testing.T) {
 	}
 	if match.Vulnerability.Severity != "Critical" {
 		t.Errorf("Severity = %v, want Critical", match.Vulnerability.Severity)
+	}
+	if match.Vulnerability.Description != "A serious flaw" {
+		t.Errorf("Description = %v, want A serious flaw", match.Vulnerability.Description)
+	}
+	if match.Vulnerability.DataSource != "https://nvd.nist.gov/vuln/detail/CVE-2023-45678" {
+		t.Errorf("DataSource = %v, want NVD URL", match.Vulnerability.DataSource)
+	}
+	if len(match.Vulnerability.Fix.Versions) != 1 || match.Vulnerability.Fix.Versions[0] != "2.0.1" {
+		t.Errorf("Fix.Versions = %v, want [2.0.1]", match.Vulnerability.Fix.Versions)
+	}
+	if match.Artifact.Name != "libfoo" {
+		t.Errorf("Artifact.Name = %v, want libfoo", match.Artifact.Name)
+	}
+	if match.Artifact.Version != "1.9.0" {
+		t.Errorf("Artifact.Version = %v, want 1.9.0", match.Artifact.Version)
 	}
 }
 

@@ -2,12 +2,23 @@
 package main
 
 // GrypeMatch represents a single vulnerability match found by Grype.
-// It contains essential information about the vulnerability including its ID and severity level.
+// It contains information about the vulnerability, the affected package, and fix availability.
 type GrypeMatch struct {
 	Vulnerability struct {
-		ID       string `json:"id"`       // CVE or vulnerability identifier (e.g., "CVE-2023-12345")
-		Severity string `json:"severity"` // Severity level: critical, high, medium, low, or negligible
+		ID          string `json:"id"`          // CVE or vulnerability identifier (e.g., "CVE-2023-12345")
+		Severity    string `json:"severity"`    // Severity level: critical, high, medium, low, or negligible
+		Description string `json:"description"` // Human-readable description of the vulnerability
+		DataSource  string `json:"dataSource"`  // URL to the vulnerability data source (e.g., NVD)
+		Fix         struct {
+			Versions []string `json:"versions"` // Versions that fix this vulnerability
+			State    string   `json:"state"`    // Fix state: "fixed", "not-fixed", "wont-fix", or "unknown"
+		} `json:"fix"`
 	} `json:"vulnerability"`
+	Artifact struct {
+		Name    string `json:"name"`    // Package name (e.g., "openssl", "lodash")
+		Version string `json:"version"` // Installed version of the package
+		Type    string `json:"type"`    // Package type (e.g., "go-module", "npm", "deb")
+	} `json:"artifact"`
 }
 
 // GrypeOutput represents the complete JSON output from a Grype scan.
@@ -61,9 +72,10 @@ type Config struct {
 	DBUpdate       bool   // If true, update the Grype vulnerability database before scanning
 	Debug          bool   // If true, print debug information including environment variables
 
-	// Output options
-	VariablePrefix string // Prefix for exported environment variables (default: "GRYPE_")
-	BadgeLabel     string // Custom label for the shields.io badge
+	// Gist integration (optional)
+	GistToken    string // GitHub token with gist scope for writing badge + report to a gist
+	GistID       string // ID of the gist to update
+	GistFilename string // Base filename for gist files (default: auto-generated from scan mode)
 }
 
 // VulnerabilityStats contains aggregated vulnerability counts by severity level.

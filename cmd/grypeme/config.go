@@ -20,11 +20,12 @@ func loadConfig() Config {
 		FailBuild:      parseBoolEnv("INPUT_FAIL-BUILD", false),
 		SeverityCutoff: strings.ToLower(getEnv("INPUT_SEVERITY-CUTOFF", "medium")),
 		OutputFile:     getEnv("INPUT_OUTPUT-FILE", ""),
-		VariablePrefix: getEnv("INPUT_VARIABLE-PREFIX", "GRYPE_"),
 		OnlyFixed:      parseBoolEnv("INPUT_ONLY-FIXED", false),
 		DBUpdate:       parseBoolEnv("INPUT_DB-UPDATE", false),
 		Debug:          parseBoolEnv("INPUT_DEBUG", false),
-		BadgeLabel:     getEnv("INPUT_BADGE-LABEL", ""),
+		GistToken:      getEnv("INPUT_GIST-TOKEN", ""),
+		GistID:         getEnv("INPUT_GIST-ID", ""),
+		GistFilename:   getEnv("INPUT_GIST-FILENAME", ""),
 	}
 }
 
