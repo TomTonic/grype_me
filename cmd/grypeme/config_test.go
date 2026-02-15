@@ -110,6 +110,9 @@ func TestLoadConfig(t *testing.T) {
 	t.Setenv("INPUT_OUTPUT-FILE", "results.json")
 	t.Setenv("INPUT_ONLY-FIXED", "true")
 	t.Setenv("INPUT_DEBUG", "false")
+	t.Setenv("INPUT_GIST-TOKEN", "ghp_test123")
+	t.Setenv("INPUT_GIST-ID", "abc123def")
+	t.Setenv("INPUT_GIST-FILENAME", "my-scan")
 
 	config := loadConfig()
 
@@ -124,6 +127,15 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if !config.OnlyFixed {
 		t.Error("config.OnlyFixed should be true")
+	}
+	if config.GistToken != "ghp_test123" {
+		t.Errorf("config.GistToken = %v, want ghp_test123", config.GistToken)
+	}
+	if config.GistID != "abc123def" {
+		t.Errorf("config.GistID = %v, want abc123def", config.GistID)
+	}
+	if config.GistFilename != "my-scan" {
+		t.Errorf("config.GistFilename = %v, want my-scan", config.GistFilename)
 	}
 }
 

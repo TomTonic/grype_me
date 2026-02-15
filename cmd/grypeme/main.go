@@ -61,56 +61,63 @@ func run() error {
 	}
 
 	// Execute Grype scan and get results
-	grypeOutput, err := executeScan(config, target)
+	grypeOutput, rawJSON, err := executeScan(config, target)
 	if err != nil {
 		return err
 	}
 
 	// Process and output results
-	return processResults(config, grypeOutput)
+	return processResults(config, grypeOutput, rawJSON)
 }
 
 // executeScan runs the Grype vulnerability scan and parses the output.
-// It creates a temporary file for Grype's JSON output, which is cleaned up after parsing.
-func executeScan(config Config, target string) (*GrypeOutput, error) {
+// It returns the parsed output, the raw JSON bytes, and any error.
+func executeScan(config Config, target string) (*GrypeOutput, []byte, error) {
 	// Create a temporary file for Grype output
 	tmpFile, err := os.CreateTemp("", "grype-output-*.json")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp file: %w", err)
+		return nil, nil, fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpFilePath := tmpFile.Name()
 
 	if err := tmpFile.Close(); err != nil {
-		return nil, fmt.Errorf("failed to close temp file: %w", err)
+		return nil, nil, fmt.Errorf("failed to close temp file: %w", err)
 	}
 	defer func() { _ = os.Remove(tmpFilePath) }()
 
 	// Run the Grype scan
 	if err := runGrypeScan(config, target, tmpFilePath); err != nil {
-		return nil, fmt.Errorf("grype scan failed: %w", err)
+		return nil, nil, fmt.Errorf("grype scan failed: %w", err)
+	}
+
+	// Read the raw JSON before parsing (for gist upload)
+	rawJSON, err := os.ReadFile(tmpFilePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read grype output: %w", err)
 	}
 
 	// Parse the scan output
 	output, err := parseGrypeOutput(tmpFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse grype output: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse grype output: %w", err)
 	}
 
 	// Copy output file to user-specified location if requested
 	if config.OutputFile != "" {
 		jsonOutputPath, err := copyOutputFile(tmpFilePath, config.OutputFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to copy output file: %w", err)
+			return nil, nil, fmt.Errorf("failed to copy output file: %w", err)
 		}
 		fmt.Printf("Scan results saved to: %s\n", jsonOutputPath)
 	}
 
-	return output, nil
+	return output, rawJSON, nil
 }
 
-// processResults calculates statistics, sets outputs, prints summary, and checks fail conditions.
-func processResults(config Config, output *GrypeOutput) error {
+// processResults calculates statistics, optionally writes to a gist, sets outputs, prints summary, and checks fail conditions.
+func processResults(config Config, output *GrypeOutput, rawJSON []byte) error {
 	stats := calculateStats(output)
+	scanMode := determineScanMode(config)
 
 	// Determine JSON output path for GitHub Actions outputs
 	jsonOutputPath := ""
@@ -119,13 +126,40 @@ func processResults(config Config, output *GrypeOutput) error {
 		jsonOutputPath = resolved
 	}
 
-	// Set GitHub Actions outputs and environment variables
-	scanMode := determineScanMode(config)
-	if err := setOutputs(config.VariablePrefix, stats, output, jsonOutputPath, config.BadgeLabel, scanMode); err != nil {
+	// Gist integration: write badge JSON + report + raw grype output if configured
+	var reportURL string
+	var gistBadgeURL string
+	if config.GistToken != "" && config.GistID != "" {
+		badgeJSON := generateBadgeJSON(stats, output.Descriptor.Version, output.DBBuilt(), scanMode)
+		report := generateReport(output, stats, scanMode)
+
+		badgeFile, reportFile, grypeFile := defaultGistFilenames(config.GistFilename, scanMode)
+
+		gistFiles := map[string]string{
+			badgeFile:  badgeJSON,
+			reportFile: report,
+		}
+		if len(rawJSON) > 0 {
+			gistFiles[grypeFile] = string(rawJSON)
+		}
+
+		client := NewGistClient(config.GistToken)
+		result, err := client.UpdateGist(config.GistID, badgeFile, reportFile, gistFiles)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to update gist: %v\n", err)
+		} else {
+			reportURL = result.ReportURL
+			gistBadgeURL = result.BadgeURL
+			fmt.Printf("Gist updated: %s\n", result.GistURL)
+		}
+	}
+
+	// Set GitHub Actions outputs (use gist badge URL when available)
+	if err := setOutputs(stats, output, jsonOutputPath, scanMode, reportURL, gistBadgeURL); err != nil {
 		return fmt.Errorf("failed to set outputs: %w", err)
 	}
 
-	// Print human-readable summary
+	// Print compact summary
 	printSummary(stats, output)
 
 	// Check if build should fail due to vulnerabilities

@@ -1,5 +1,5 @@
 // Package main provides output handling for the Grype GitHub Action.
-// This includes GitHub Actions outputs, environment variables, file copying, and badge generation.
+// This includes GitHub Actions outputs, file copying, badge generation, and Markdown reports.
 package main
 
 import (
@@ -7,13 +7,15 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 )
 
-// setOutputs writes scan results to GitHub Actions outputs and environment variables.
-// Outputs are written to GITHUB_OUTPUT file, and environment variables (with custom prefix)
-// are written to GITHUB_ENV file.
-func setOutputs(prefix string, stats VulnerabilityStats, output *GrypeOutput, jsonPath, badgeLabel, scanMode string) error {
+// setOutputs writes scan results to GitHub Actions step outputs.
+// It generates a badge URL and writes core outputs (counts, versions, badge URL).
+// When gistBadgeURL is non-empty, it is used instead of the static badge URL.
+func setOutputs(stats VulnerabilityStats, output *GrypeOutput, jsonPath, scanMode string, reportURL, gistBadgeURL string) error {
 	githubOutput := os.Getenv("GITHUB_OUTPUT")
 	if githubOutput == "" {
 		fmt.Println("Warning: GITHUB_OUTPUT not set, skipping output generation")
@@ -26,24 +28,13 @@ func setOutputs(prefix string, stats VulnerabilityStats, output *GrypeOutput, js
 	}
 	defer func() { _ = outputFile.Close() }()
 
-	// Generate badge URL with auto-generated label if not provided
-	label := badgeLabel
-	if label == "" {
-		label = buildBadgeLabel(scanMode)
-	}
-	badgeURL := generateBadgeURL(stats, label, output.DBBuilt())
-
-	// Write GitHub Actions step outputs
-	if err := writeStepOutputs(outputFile, stats, output, jsonPath, badgeURL); err != nil {
-		return err
+	// Use gist endpoint badge URL when available, otherwise fall back to static URL
+	badgeURL := gistBadgeURL
+	if badgeURL == "" {
+		label := buildBadgeLabel(output.Descriptor.Version)
+		badgeURL = generateBadgeURL(stats, label, output.DBBuilt(), scanMode)
 	}
 
-	// Write prefixed environment variables
-	return writeEnvironmentVariables(prefix, stats, output, badgeURL)
-}
-
-// writeStepOutputs writes the scan results to GitHub Actions step outputs.
-func writeStepOutputs(file *os.File, stats VulnerabilityStats, output *GrypeOutput, jsonPath, badgeURL string) error {
 	outputs := map[string]string{
 		"grype-version": output.Descriptor.Version,
 		"db-version":    output.DBBuilt(),
@@ -53,18 +44,17 @@ func writeStepOutputs(file *os.File, stats VulnerabilityStats, output *GrypeOutp
 		"medium":        fmt.Sprintf("%d", stats.Medium),
 		"low":           fmt.Sprintf("%d", stats.Low),
 		"badge-url":     badgeURL,
-		"badge-date":    extractDBDate(output.DBBuilt()),
-		"badge-counts":  formatBadgeMessage(stats),
-		"badge-color":   determineBadgeColor(stats),
-		"badge-message": fmt.Sprintf("%s: %s CVEs", extractDBDate(output.DBBuilt()), formatBadgeMessage(stats)),
 	}
 
 	if jsonPath != "" {
 		outputs["json-output"] = jsonPath
 	}
+	if reportURL != "" {
+		outputs["report-url"] = reportURL
+	}
 
 	for key, value := range outputs {
-		if _, err := fmt.Fprintf(file, "%s=%s\n", key, value); err != nil {
+		if _, err := fmt.Fprintf(outputFile, "%s=%s\n", key, value); err != nil {
 			return fmt.Errorf("failed to write output %s: %w", key, err)
 		}
 	}
@@ -72,60 +62,230 @@ func writeStepOutputs(file *os.File, stats VulnerabilityStats, output *GrypeOutp
 	return nil
 }
 
-// writeEnvironmentVariables writes scan results to GITHUB_ENV with the configured prefix.
-func writeEnvironmentVariables(prefix string, stats VulnerabilityStats, output *GrypeOutput, badgeURL string) error {
-	githubEnv := os.Getenv("GITHUB_ENV")
-	if githubEnv == "" {
-		return nil // Not in GitHub Actions environment
-	}
+// printSummary prints a compact one-line summary of the scan results to stdout.
+func printSummary(stats VulnerabilityStats, output *GrypeOutput) {
+	msg := formatBadgeMessage(stats)
+	fmt.Printf("✊ grype %s | db %s | %s CVEs\n",
+		output.Descriptor.Version,
+		extractDBDate(output.DBBuilt()),
+		msg)
+}
 
-	envFile, err := os.OpenFile(githubEnv, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open GITHUB_ENV: %w", err)
-	}
-	defer func() { _ = envFile.Close() }()
+// buildBadgeLabel creates the badge label with the Grype version.
+// Format: "✊ grype <version>" (e.g., "✊ grype 0.87.0").
+func buildBadgeLabel(grypeVersion string) string {
+	return fmt.Sprintf("✊ grype %s", grypeVersion)
+}
 
-	envVars := map[string]string{
-		"VERSION":       output.Descriptor.Version,
-		"DB_VERSION":    output.DBBuilt(),
-		"CVE_COUNT":     fmt.Sprintf("%d", stats.Total),
-		"CRITICAL":      fmt.Sprintf("%d", stats.Critical),
-		"HIGH":          fmt.Sprintf("%d", stats.High),
-		"MEDIUM":        fmt.Sprintf("%d", stats.Medium),
-		"LOW":           fmt.Sprintf("%d", stats.Low),
-		"BADGE_URL":     badgeURL,
-		"BADGE_DATE":    extractDBDate(output.DBBuilt()),
-		"BADGE_COUNTS":  formatBadgeMessage(stats),
-		"BADGE_COLOR":   determineBadgeColor(stats),
-		"BADGE_MESSAGE": fmt.Sprintf("%s: %s CVEs", extractDBDate(output.DBBuilt()), formatBadgeMessage(stats)),
+// extractDBDate extracts the date portion (YYYY-MM-DD) from a timestamp.
+// Expected input format: RFC3339 (e.g., "2026-01-30T12:34:56Z").
+func extractDBDate(timestamp string) string {
+	if len(timestamp) >= 10 {
+		return timestamp[:10]
 	}
+	return timestamp
+}
 
-	for key, value := range envVars {
-		if _, err := fmt.Fprintf(envFile, "%s%s=%s\n", prefix, key, value); err != nil {
-			return fmt.Errorf("failed to write env var %s: %w", key, err)
+// generateBadgeURL creates a shields.io badge URL based on scan statistics.
+// Label: "✊ grype <version>", Message: "db <date>: <counts> CVEs in <scanMode>".
+// Colors indicate the highest severity found.
+func generateBadgeURL(stats VulnerabilityStats, label, dbBuilt, scanMode string) string {
+	counts := formatBadgeMessage(stats)
+
+	message := fmt.Sprintf("%s CVEs in %s", counts, scanMode)
+	if dbBuilt != "" {
+		if dbDate := extractDBDate(dbBuilt); dbDate != "" {
+			dbDate = strings.ReplaceAll(dbDate, "-", "--") // Escape dashes for shields.io
+			message = fmt.Sprintf("db %s: %s", dbDate, message)
 		}
 	}
 
-	return nil
+	color := determineBadgeColor(stats)
+
+	// shields.io static badge format: https://img.shields.io/badge/{label}-{message}-{color}
+	encodedLabel := url.PathEscape(label)
+	encodedMessage := url.PathEscape(message)
+
+	return fmt.Sprintf("https://img.shields.io/badge/%s-%s-%s", encodedLabel, encodedMessage, color)
 }
 
-// printSummary prints a human-readable summary of the scan results to stdout.
-func printSummary(stats VulnerabilityStats, output *GrypeOutput) {
-	fmt.Println("\n=== Grype Scan Summary ===")
-	fmt.Printf("Grype Version: %s\n", output.Descriptor.Version)
-	fmt.Printf("Database Version: %s\n", output.DBBuilt())
-	fmt.Printf("\nVulnerabilities Found:\n")
-	fmt.Printf("  Total:    %d\n", stats.Total)
-	fmt.Printf("  Critical: %d\n", stats.Critical)
-	fmt.Printf("  High:     %d\n", stats.High)
-	fmt.Printf("  Medium:   %d\n", stats.Medium)
-	fmt.Printf("  Low:      %d\n", stats.Low)
-
-	if stats.Other > 0 {
-		fmt.Printf("  Other:    %d\n", stats.Other)
+// formatBadgeMessage creates the count portion of the badge message.
+// Returns "0" if no vulnerabilities, otherwise severity counts like "3 critical | 1 high".
+func formatBadgeMessage(stats VulnerabilityStats) string {
+	if stats.Total == 0 {
+		return "0"
 	}
 
-	fmt.Println("==========================")
+	var parts []string
+	if stats.Critical > 0 {
+		parts = append(parts, fmt.Sprintf("%d critical", stats.Critical))
+	}
+	if stats.High > 0 {
+		parts = append(parts, fmt.Sprintf("%d high", stats.High))
+	}
+	if stats.Medium > 0 {
+		parts = append(parts, fmt.Sprintf("%d medium", stats.Medium))
+	}
+	if stats.Low > 0 {
+		parts = append(parts, fmt.Sprintf("%d low", stats.Low))
+	}
+	if len(parts) == 0 && stats.Other > 0 {
+		parts = append(parts, fmt.Sprintf("%d other", stats.Other))
+	}
+
+	return strings.Join(parts, " | ")
+}
+
+// determineBadgeColor returns the shields.io badge color based on the highest severity found.
+func determineBadgeColor(stats VulnerabilityStats) string {
+	switch {
+	case stats.Critical > 0:
+		return "critical" // Red
+	case stats.High > 0:
+		return "orange"
+	case stats.Medium > 0:
+		return "yellow"
+	case stats.Low > 0 || stats.Other > 0:
+		return "yellowgreen"
+	default:
+		return "brightgreen"
+	}
+}
+
+// generateBadgeJSON creates a shields.io endpoint badge JSON for use with gists.
+// This JSON is consumed by shields.io/endpoint to render a dynamic badge.
+func generateBadgeJSON(stats VulnerabilityStats, grypeVersion, dbBuilt, scanMode string) string {
+	label := buildBadgeLabel(grypeVersion)
+	counts := formatBadgeMessage(stats)
+	message := fmt.Sprintf("%s CVEs in %s", counts, scanMode)
+	if dbBuilt != "" {
+		if dbDate := extractDBDate(dbBuilt); dbDate != "" {
+			message = fmt.Sprintf("db %s: %s", dbDate, message)
+		}
+	}
+	color := determineBadgeColor(stats)
+
+	// Minimal JSON without external dependencies
+	return fmt.Sprintf(`{"schemaVersion":1,"label":"%s","message":"%s","color":"%s"}`,
+		escapeJSON(label), escapeJSON(message), escapeJSON(color))
+}
+
+// generateReport creates a Markdown vulnerability report suitable for storing in a gist.
+// Includes a summary table and a detailed CVE table with package info, fix versions, and data source links.
+func generateReport(output *GrypeOutput, stats VulnerabilityStats, scanMode string) string {
+	return generateReportAt(output, stats, scanMode, time.Now().UTC())
+}
+
+// generateReportAt creates a Markdown report with a specific timestamp (for testability).
+func generateReportAt(output *GrypeOutput, stats VulnerabilityStats, scanMode string, now time.Time) string {
+	var b strings.Builder
+
+	grypeVersion := output.Descriptor.Version
+	dbDate := extractDBDate(output.DBBuilt())
+
+	b.WriteString(fmt.Sprintf("# ✊ grype %s — Vulnerability Scan Report\n\n", grypeVersion))
+	b.WriteString(fmt.Sprintf("**Scan mode:** %s  \n", scanMode))
+	b.WriteString(fmt.Sprintf("**DB version:** %s  \n", dbDate))
+	b.WriteString(fmt.Sprintf("**Scanned:** %s  \n", now.Format("2006-01-02 15:04 UTC")))
+	b.WriteString(fmt.Sprintf("**Total CVEs:** %d\n\n", stats.Total))
+
+	// Summary table
+	b.WriteString("## Summary\n\n")
+	b.WriteString("| Severity | Count |\n")
+	b.WriteString("|----------|------:|\n")
+	b.WriteString(fmt.Sprintf("| Critical | %d |\n", stats.Critical))
+	b.WriteString(fmt.Sprintf("| High | %d |\n", stats.High))
+	b.WriteString(fmt.Sprintf("| Medium | %d |\n", stats.Medium))
+	b.WriteString(fmt.Sprintf("| Low | %d |\n", stats.Low))
+	if stats.Other > 0 {
+		b.WriteString(fmt.Sprintf("| Other | %d |\n", stats.Other))
+	}
+	b.WriteString(fmt.Sprintf("| **Total** | **%d** |\n", stats.Total))
+
+	// Detailed CVE table (only if vulnerabilities found)
+	if stats.Total > 0 {
+		b.WriteString("\n## Vulnerabilities\n\n")
+		b.WriteString("| CVE | Severity | Package | Installed | Fixed | Description | Source |\n")
+		b.WriteString("|-----|----------|---------|-----------|-------|-------------|--------|\n")
+
+		sorted := sortMatches(output.Matches)
+		for _, m := range sorted {
+			fixed := strings.Join(m.Vulnerability.Fix.Versions, ", ")
+			if fixed == "" {
+				fixed = "—"
+			}
+			desc := truncate(m.Vulnerability.Description, 80)
+			source := ""
+			if m.Vulnerability.DataSource != "" {
+				source = fmt.Sprintf("[link](%s)", m.Vulnerability.DataSource)
+			}
+			b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s |\n",
+				m.Vulnerability.ID,
+				m.Vulnerability.Severity,
+				m.Artifact.Name,
+				m.Artifact.Version,
+				fixed,
+				desc,
+				source))
+		}
+	} else {
+		b.WriteString("\n✅ No vulnerabilities found.\n")
+	}
+
+	b.WriteString("\n---\n*Generated by [grype_me](https://github.com/TomTonic/grype_me)*\n")
+
+	return b.String()
+}
+
+// sortMatches returns a copy of matches sorted by severity (critical first), then by CVE ID.
+func sortMatches(matches []GrypeMatch) []GrypeMatch {
+	sorted := make([]GrypeMatch, len(matches))
+	copy(sorted, matches)
+	sort.Slice(sorted, func(i, j int) bool {
+		si := severityOrder(sorted[i].Vulnerability.Severity)
+		sj := severityOrder(sorted[j].Vulnerability.Severity)
+		if si != sj {
+			return si < sj
+		}
+		return sorted[i].Vulnerability.ID < sorted[j].Vulnerability.ID
+	})
+	return sorted
+}
+
+// severityOrder returns a numeric order for severity (lower = more severe).
+func severityOrder(severity string) int {
+	switch strings.ToLower(severity) {
+	case "critical":
+		return 0
+	case "high":
+		return 1
+	case "medium":
+		return 2
+	case "low":
+		return 3
+	default:
+		return 4
+	}
+}
+
+// truncate shortens a string to maxLen characters, appending "…" if truncated.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 1 {
+		return "…"
+	}
+	return s[:maxLen-1] + "…"
+}
+
+// escapeJSON escapes a string for embedding in a JSON value.
+func escapeJSON(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	s = strings.ReplaceAll(s, "\t", `\t`)
+	return s
 }
 
 // validatePathInWorkspace ensures the destination path is within the workspace directory.
@@ -159,25 +319,21 @@ func validatePathInWorkspace(destPath, workspace string) error {
 func copyOutputFile(srcPath, destPath string) (string, error) {
 	resolvedDest, workspace := resolveDestinationPath(destPath)
 
-	// Validate path is within workspace to prevent path traversal
 	if workspace != "" {
 		if err := validatePathInWorkspace(resolvedDest, workspace); err != nil {
 			return "", err
 		}
 	}
 
-	// Create parent directories if they don't exist
 	if err := os.MkdirAll(filepath.Dir(resolvedDest), 0755); err != nil {
 		return "", fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	// Read source file
 	data, err := os.ReadFile(srcPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read source: %w", err)
 	}
 
-	// Write to destination
 	if err := os.WriteFile(resolvedDest, data, 0644); err != nil {
 		return "", fmt.Errorf("failed to write destination: %w", err)
 	}
@@ -187,116 +343,22 @@ func copyOutputFile(srcPath, destPath string) (string, error) {
 
 // resolveDestinationPath converts a relative path to an absolute path.
 // It uses the GitHub workspace directory if available.
-// Returns (resolvedPath, workspaceUsed) where workspaceUsed is the workspace path if used.
 func resolveDestinationPath(destPath string) (string, string) {
 	if filepath.IsAbs(destPath) {
 		return destPath, ""
 	}
 
-	// Try /github/workspace first (Docker environment)
 	if _, err := os.Stat("/github/workspace"); err == nil {
 		return filepath.Join("/github/workspace", destPath), "/github/workspace"
 	}
 
-	// Try GITHUB_WORKSPACE environment variable
 	if workspace := os.Getenv("GITHUB_WORKSPACE"); workspace != "" {
 		return filepath.Join(workspace, destPath), workspace
 	}
 
-	// Fall back to current working directory
 	absPath, err := filepath.Abs(destPath)
 	if err != nil {
 		return destPath, ""
 	}
 	return absPath, ""
-}
-
-// buildBadgeLabel creates a badge label based on the scan mode.
-// Format: "grype_me <mode>" (e.g., "grype_me release")
-// Note: the underscore must be "escaped" as double underscore "__" for shields.io to render it correctly.
-func buildBadgeLabel(scanMode string) string {
-	return fmt.Sprintf("✊ grype__me %s", scanMode)
-}
-
-// extractDBDate extracts the date portion (YYYY-MM-DD) from a timestamp.
-// Expected input format: RFC3339 (e.g., "2026-01-30T12:34:56Z")
-func extractDBDate(timestamp string) string {
-	if len(timestamp) >= 10 {
-		return timestamp[:10]
-	}
-	return timestamp
-}
-
-// generateBadgeURL creates a shields.io badge URL based on scan statistics.
-// The badge displays vulnerability counts with colors indicating severity:
-//   - Green: No vulnerabilities
-//   - Yellow-green: Only low severity
-//   - Yellow: Medium severity present
-//   - Orange: High severity present
-//   - Red: Critical severity present
-func generateBadgeURL(stats VulnerabilityStats, label, dbBuilt string) string {
-	message := formatBadgeMessage(stats)
-
-	// Append database build date to the message
-	if dbBuilt != "" {
-		if dbDate := extractDBDate(dbBuilt); dbDate != "" {
-			dbDate = strings.ReplaceAll(dbDate, "-", "--") // Escape dashes for shields.io
-			message = fmt.Sprintf("%s: %s CVEs", dbDate, message)
-		}
-	}
-
-	color := determineBadgeColor(stats)
-
-	// shields.io static badge format: https://img.shields.io/badge/{label}-{message}-{color}
-	encodedLabel := url.PathEscape(label)
-	encodedMessage := url.PathEscape(message)
-
-	return fmt.Sprintf("https://img.shields.io/badge/%s-%s-%s", encodedLabel, encodedMessage, color)
-}
-
-// formatBadgeMessage creates the message portion of the badge.
-// Shows "none" if no vulnerabilities, otherwise shows counts by severity level.
-func formatBadgeMessage(stats VulnerabilityStats) string {
-	if stats.Total == 0 {
-		return "0"
-	}
-
-	var parts []string
-
-	if stats.Critical > 0 {
-		parts = append(parts, fmt.Sprintf("%d critical", stats.Critical))
-	}
-	if stats.High > 0 {
-		parts = append(parts, fmt.Sprintf("%d high", stats.High))
-	}
-	if stats.Medium > 0 {
-		parts = append(parts, fmt.Sprintf("%d medium", stats.Medium))
-	}
-	if stats.Low > 0 {
-		parts = append(parts, fmt.Sprintf("%d low", stats.Low))
-	}
-
-	// Handle case where only "other" severities exist
-	if len(parts) == 0 && stats.Other > 0 {
-		parts = append(parts, fmt.Sprintf("%d other", stats.Other))
-	}
-
-	return strings.Join(parts, " | ")
-}
-
-// determineBadgeColor returns the shields.io badge color based on the highest severity found.
-// Uses a traffic light color scheme for intuitive visual interpretation.
-func determineBadgeColor(stats VulnerabilityStats) string {
-	switch {
-	case stats.Critical > 0:
-		return "critical" // Red
-	case stats.High > 0:
-		return "orange"
-	case stats.Medium > 0:
-		return "yellow"
-	case stats.Low > 0 || stats.Other > 0:
-		return "yellowgreen"
-	default:
-		return "brightgreen"
-	}
 }
