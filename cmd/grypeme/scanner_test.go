@@ -63,22 +63,10 @@ func TestCalculateStats(t *testing.T) {
 			name: "mixed severities",
 			output: &GrypeOutput{
 				Matches: []GrypeMatch{
-					{Vulnerability: struct {
-						ID       string `json:"id"`
-						Severity string `json:"severity"`
-					}{ID: "CVE-1", Severity: "Critical"}},
-					{Vulnerability: struct {
-						ID       string `json:"id"`
-						Severity string `json:"severity"`
-					}{ID: "CVE-2", Severity: "High"}},
-					{Vulnerability: struct {
-						ID       string `json:"id"`
-						Severity string `json:"severity"`
-					}{ID: "CVE-3", Severity: "Medium"}},
-					{Vulnerability: struct {
-						ID       string `json:"id"`
-						Severity string `json:"severity"`
-					}{ID: "CVE-4", Severity: "Low"}},
+					makeMatch("CVE-1", "Critical", "pkg1", "1.0", nil, "", ""),
+					makeMatch("CVE-2", "High", "pkg2", "1.0", nil, "", ""),
+					makeMatch("CVE-3", "Medium", "pkg3", "1.0", nil, "", ""),
+					makeMatch("CVE-4", "Low", "pkg4", "1.0", nil, "", ""),
 				},
 			},
 			want: VulnerabilityStats{Total: 4, Critical: 1, High: 1, Medium: 1, Low: 1},
@@ -87,14 +75,8 @@ func TestCalculateStats(t *testing.T) {
 			name: "case insensitive",
 			output: &GrypeOutput{
 				Matches: []GrypeMatch{
-					{Vulnerability: struct {
-						ID       string `json:"id"`
-						Severity string `json:"severity"`
-					}{ID: "CVE-1", Severity: "CRITICAL"}},
-					{Vulnerability: struct {
-						ID       string `json:"id"`
-						Severity string `json:"severity"`
-					}{ID: "CVE-2", Severity: "high"}},
+					makeMatch("CVE-1", "CRITICAL", "pkg1", "1.0", nil, "", ""),
+					makeMatch("CVE-2", "high", "pkg2", "1.0", nil, "", ""),
 				},
 			},
 			want: VulnerabilityStats{Total: 2, Critical: 1, High: 1},
@@ -176,9 +158,8 @@ func TestEndToEndWithPath(t *testing.T) {
 	}
 
 	config := Config{
-		Path:           tmpDir,
-		OutputFile:     "",
-		VariablePrefix: "TEST_",
+		Path:       tmpDir,
+		OutputFile: "",
 	}
 
 	target, _, err := determineScanTarget(config)

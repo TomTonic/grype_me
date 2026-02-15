@@ -1,9 +1,9 @@
 # ✊ grype_me
 
-![Vulnerabilities of Action](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype_me-badge-latest-project-release.json)
-![Vulnerabilities of Docker Image](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype_me-badge-daily-docker-image.json)
+[![Vulnerabilities of Action](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype_me-action_release.json)](https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype_me-action_release.md)
+[![Vulnerabilities of Docker Image](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype_me-docker_image.json)](https://gist.githubusercontent.com/TomTonic/e0a34e0c03120db2400fc0480169498c/raw/grype_me-docker_image.md)
 
-An easy to use GitHub Action to scan the supply chain of your project for known vulnerabilities using [Anchore Grype](https://github.com/anchore/grype) and generate badges.
+An easy to use GitHub Action to scan the supply chain of your project for known vulnerabilities using [Anchore Grype](https://github.com/anchore/grype) and generate badges with detailed reports.
 
 ## Quick Start
 
@@ -11,23 +11,20 @@ An easy to use GitHub Action to scan the supply chain of your project for known 
 - uses: actions/checkout@v4
   with: { fetch-depth: 0, fetch-tags: true }
 - uses: TomTonic/grype_me@v1
-  id: grype_me
-  with: { scan: 'latest_release', fail-build: false }
-- uses: schneegans/dynamic-badges-action@v1.7.0
   with:
-    auth: ${{ secrets.GIST_TOKEN }}
-    gistID: ${{ vars.GRYPE_BADGE_GIST_ID }}
-    filename: grype-badge.json
-    label: ✊ grype_me
-    message: ${{ steps.grype_me.outputs.badge-message }} in latest release
-    color: ${{ steps.grype_me.outputs.badge-color }}
+    scan: 'latest_release'
+    fail-build: false
+    gist-token: ${{ secrets.GIST_TOKEN }}
+    gist-id: ${{ vars.GRYPE_BADGE_GIST_ID }}
 ```
 
-For a full example see how this projects [runs a daily scan](./.github/workflows/security-badge.yml) to update [the two badges in this Action's README.md](https://github.com/TomTonic/grype_me/blame/main/README.md#L3-L4).
+This scans your latest release, uploads a shields.io badge JSON and a detailed Markdown report to a GitHub Gist, and makes the badge URL available as a step output. Click a badge above to see a live example report.
+
+For a full example see how this project [runs a daily scan](./.github/workflows/security-badge.yml) to update the two badges in this README.
 
 > **Note**: The default scan mode is `latest_release`, which scans your highest semver tag. If your repo has no tags yet, use `scan: 'head'` instead.
 
-> **Note**: Due to automated daily updates of this action, pinning its version may yield to unexpected behavior. See [Daily tag updates](#daily-tag-updates).
+> **Note**: Due to automated daily updates of this action, pinning its version may yield unexpected behavior. See [Daily tag updates](#daily-tag-updates).
 
 ## Features
 
@@ -38,7 +35,7 @@ For a full example see how this projects [runs a daily scan](./.github/workflows
 - 📊 Detailed vulnerability counts by severity (Critical, High, Medium, Low)
 - 🚨 Fail builds on vulnerabilities at or above a configurable threshold
 - 🔧 Option to show only vulnerabilities with available fixes
-- 🏷️ **Dynamic badge generation**: Display vulnerability status in your README
+- 🏷️ **Dynamic badge generation** with linked Markdown reports—no extra action needed
 
 ## How It Works
 
@@ -68,29 +65,37 @@ Use `image`, `path`, or `sbom` to scan build artifacts. These inputs are mutuall
 
 ## Usage
 
-> 💡 Copy [`example-workflow.yml`](example-workflow.yml) to `.github/workflows/` for a ready-to-use setup.
+### Nightly Release Scan with Badge
 
-### Nightly Release Scan
+See [`.github/workflows/security-badge.yml`](./.github/workflows/security-badge.yml) for the workflow that generates the badges shown in this README. Here's the essential pattern:
 
 ```yaml
-name: Nightly Security Scan
+name: Security Badge
 on:
   schedule:
     - cron: '0 2 * * *'
+  workflow_dispatch:
 
 jobs:
-  scan:
+  update-badge:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0, fetch-tags: true }
-      
+
       - uses: TomTonic/grype_me@v1
         with:
           scan: 'latest_release'
-          fail-build: true
-          severity-cutoff: 'high'
+          fail-build: false
+          gist-token: ${{ secrets.GIST_TOKEN }}
+          gist-id: ${{ vars.GRYPE_BADGE_GIST_ID }}
+          gist-filename: 'my-project'
 ```
+
+This writes three files to the gist:
+- `my-project.json` — shields.io endpoint badge JSON
+- `my-project.md` — detailed Markdown report with CVE table
+- `my-project-grype.json` — raw Grype scan output
 
 ### Container Image Scan
 
@@ -105,29 +110,23 @@ jobs:
     severity-cutoff: 'high'
 ```
 
-### Full Example with Outputs
+### Using the Badge in Your README
 
-```yaml
-- name: Scan for vulnerabilities
-  id: grype
-  uses: TomTonic/grype_me@v1
-  with:
-    scan: 'latest_release'
-    output-file: 'grype-results.json'
-    fail-build: true
-    severity-cutoff: 'medium'
+After the first workflow run, add the badge to your README:
 
-- name: Show results
-  run: |
-    echo "Total CVEs: ${{ steps.grype.outputs.cve-count }}"
-    echo "Critical: ${{ steps.grype.outputs.critical }}"
-
-- uses: actions/upload-artifact@v4
-  if: always()
-  with:
-    name: grype-results
-    path: grype-results.json
+```markdown
+[![Vulnerabilities](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/YOUR_USER/YOUR_GIST_ID/raw/my-project.json)](https://gist.githubusercontent.com/YOUR_USER/YOUR_GIST_ID/raw/my-project.md)
 ```
+
+The badge links to the detailed Markdown report. Clicking it shows the full CVE breakdown.
+
+#### Setup
+
+1. **Create a GitHub Gist** at [gist.github.com](https://gist.github.com) with any initial file (e.g., `init.txt` with content `{}`). Copy the Gist ID from the URL.
+2. **Create a Personal Access Token** at [GitHub Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens) with `gist` scope.
+3. **Add secrets/variables** to your repository:
+   - Secret `GIST_TOKEN` — the PAT from step 2
+   - Variable `GRYPE_BADGE_GIST_ID` — the gist ID from step 1
 
 ## Inputs
 
@@ -149,14 +148,20 @@ jobs:
 | `output-file` | Save results to JSON file | – |
 | `only-fixed` | Only report vulnerabilities with fixes available | `false` |
 | `db-update` | Update DB before scanning (see [Performance](#performance)) | `false` |
-| `badge-label` | Label text for the generated badge | `vulnerabilities` |
+
+### Gist Integration
+
+| Input | Description | Default |
+|-------|-------------|---------|
+| `gist-token` | GitHub PAT with `gist` scope (store as secret) | – |
+| `gist-id` | ID of the gist to update | – |
+| `gist-filename` | Base filename for gist files (e.g., `my-project`) | auto from scan mode |
 
 <details>
 <summary>Advanced inputs</summary>
 
 | Input | Description | Default |
 |-------|-------------|---------|
-| `variable-prefix` | Prefix for environment variables | `GRYPE_` |
 | `debug` | Print environment variables (may expose secrets) | `false` |
 
 </details>
@@ -170,9 +175,8 @@ jobs:
 | `grype-version` | Grype version used |
 | `db-version` | Vulnerability database version |
 | `json-output` | Path to output file (if `output-file` set) |
-| `badge-url` | shields.io badge URL showing vulnerability summary |
-
-The same values are also exported as environment variables with a configurable prefix (default: `GRYPE_CVE_COUNT`, `GRYPE_CRITICAL`, etc.).
+| `badge-url` | shields.io badge URL (dynamic endpoint when gist configured, static otherwise) |
+| `report-url` | URL to the detailed Markdown report in the gist |
 
 ## Performance
 
@@ -193,7 +197,7 @@ The action image is **rebuilt daily** with the latest Grype and vulnerability da
 <a name="daily-tag-updates"></a>
 ### Daily tag updates
 
-The published container image is rebuilt daily to always contains the newest Grype release and the latest vulnerability database. As a result, moving tags are shifted to the new image every day: `latest`, `v1`, `v1.2`, and `v1.2.3`. By design, the patch level only refers to the patch level of this action, not including the vulnerability database.
+The published container image is rebuilt daily to always contain the newest Grype release and the latest vulnerability database. As a result, moving tags are shifted to the new image every day: `latest`, `v1`, `v1.2`, and `v1.2.3`. By design, the patch level only refers to the patch level of this action, not including the vulnerability database.
 
 Only the following tags remain immutable and stable:
 - `v1.2.3-release`
@@ -203,7 +207,7 @@ This behavior is intentional but can be surprising if you try to pin to a patch 
 
 ## Badge
 
-The action generates a dynamic [shields.io](https://shields.io) badge URL that you can display in your README. The badge shows vulnerability counts and uses color-coding for quick visual assessment:
+The action generates a dynamic [shields.io](https://shields.io) badge that shows vulnerability counts with color-coding:
 
 | Color | Meaning |
 |-------|---------|
@@ -213,92 +217,18 @@ The action generates a dynamic [shields.io](https://shields.io) badge URL that y
 | ![orange](https://img.shields.io/badge/vulnerabilities-1%20high-orange) | High severity |
 | ![critical](https://img.shields.io/badge/vulnerabilities-2%20critical-critical) | Critical severity |
 
-### Badge Output
+When gist integration is configured, the badge is a [shields.io endpoint badge](https://shields.io/badges/endpoint-badge) that updates automatically. Clicking the badge opens the detailed Markdown report showing every CVE with package, version, fix status, and description.
 
-The `badge-url` output contains a complete shields.io URL. Example outputs:
-
-- No vulnerabilities: `https://img.shields.io/badge/vulnerabilities-none-brightgreen`
-- With findings: `https://img.shields.io/badge/vulnerabilities-2%20critical%20%7C%201%20high-critical`
-
-### Using the Badge in Your README
-
-The challenge: Your README needs a static badge URL, but scan results change with each run. There are two approaches:
-
-#### Option A: Gist-Based Badge (Recommended)
-
-This approach stores the badge data in a GitHub Gist, which your README references. The badge updates automatically when the gist is updated.
-
-**Step 1:** Create a GitHub Gist
-
-1. Go to [gist.github.com](https://gist.github.com) and create a new gist
-2. Name the file `grype-badge.json` with any initial content (e.g., `{}`)
-3. Save and copy the Gist ID from the URL (e.g., `https://gist.github.com/youruser/abc123def456` → ID is `abc123def456`)
-
-**Step 2:** Create a Personal Access Token
-
-1. Go to [GitHub Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens)
-2. Create a (classic) token with `gist` scope
-3. Copy the token value to a new repository secret named `GIST_TOKEN`
-
-**Step 3:** Add a workflow that updates the gist:
+Without gist integration, the `badge-url` output contains a static shields.io URL that can be displayed in workflow summaries:
 
 ```yaml
-name: Security Badge
-on:
-  schedule:
-    - cron: '0 2 * * *'
-  workflow_dispatch:
-
-jobs:
-  update-badge:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0, fetch-tags: true }
-
-      - name: Run Grype scan
-        id: grype
-        uses: TomTonic/grype_me@v1
-        with:
-          scan: 'latest_release'
-
-      - name: Update Gist with badge data
-        uses: schneegans/dynamic-badges-action@v1.7.0
-        with:
-          auth: ${{ secrets.GIST_TOKEN }}
-          gistID: YOUR_GIST_ID  # Replace with your Gist ID
-          filename: grype-badge.json
-          label: vulnerabilities
-          message: ${{ steps.grype.outputs.cve-count }} vulnerabilities found
-          valColorRange: ${{ steps.grype.outputs.cve-count }}
-          maxColorRange: 10
-          minColorRange: 0
-```
-
-**Step 4:** Add the badge to your README:
-
-```markdown
-![Vulnerabilities](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/YOUR_USER/YOUR_GIST_ID/raw/grype-badge.json)
-```
-
-#### Option B: Display in Workflow Summary
-
-If you don't need the badge in your README, you can display it in the GitHub Actions workflow summary:
-
-```yaml
-- name: Run Grype scan
+- uses: TomTonic/grype_me@v1
   id: grype
-  uses: TomTonic/grype_me@v1
-  with:
-    scan: 'latest_release'
+  with: { scan: 'latest_release' }
 
-- name: Add badge to summary
-  run: |
-    echo "## Vulnerability Scan" >> $GITHUB_STEP_SUMMARY
+- run: |
     echo "![Badge](${{ steps.grype.outputs.badge-url }})" >> $GITHUB_STEP_SUMMARY
 ```
-
-This displays the badge directly in the workflow run summary without needing a gist.
 
 ## Alerting Examples
 
@@ -317,7 +247,7 @@ This displays the badge directly in the workflow run summary without needing a g
         owner: context.repo.owner,
         repo: context.repo.repo,
         title: '🚨 Critical vulnerabilities detected',
-        body: `Found ${{ steps.grype.outputs.critical }} critical CVEs.\n\n[View run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+        body: `Found ${{ steps.grype.outputs.critical }} critical CVEs.\n\n[View report](${{ steps.grype.outputs.report-url }})`,
         labels: ['security', 'critical']
       });
 ```
