@@ -97,9 +97,9 @@ inputs:
   gist-filename:
     description: >-
       Base filename for files stored in the gist. The action will create
-      two files: '<name>-badge.json' (shields.io endpoint) and
-      '<name>-report.md' (detailed scan report). If empty, the scan
-      mode is used (e.g., 'release-badge.json', 'release-report.md').
+      three files: '<name>.json' (shields.io endpoint), '<name>.md'
+      (detailed scan report), and '<name>-grype.json' (raw grype output).
+      If empty, the scan mode is used (e.g., 'grype-release.json').
     required: false
     default: ''
 
@@ -128,7 +128,8 @@ outputs:
       yellowgreen (low), yellow (medium), orange (high), red (critical).
   report-url:
     description: >-
-      URL to the detailed Markdown scan report stored in the gist.
+      URL to the rendered Markdown scan report section in the gist
+      (gist.github.com with file anchor).
       Only set when gist-token and gist-id are configured.
       Can be used as the badge link target so clicking the badge
       opens the full vulnerability report.
