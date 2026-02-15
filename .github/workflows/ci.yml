@@ -23,4 +23,6 @@ jobs:
 
   docker:
     name: Docker
+    needs: [lint, test]
+    if: ${{ needs.lint.result == 'success' && needs.test.result == 'success' }}
     uses: ./.github/workflows/_ci-docker.yml
