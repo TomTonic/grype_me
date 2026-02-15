@@ -168,7 +168,7 @@ func defaultGistFilenames(customBase, scanMode string) (badgeFilename, reportFil
 }
 
 // buildGistReportURL creates a rendered Gist URL with file anchor.
-// Example: https://gist.github.com/user/id#file-my-report-md
+// Example: https://gist.github.com/user/id#file-my_report-md
 func buildGistReportURL(gistHTMLURL, reportFilename string) string {
 	anchor := buildGistFileAnchor(reportFilename)
 	if anchor == "" {
@@ -178,7 +178,7 @@ func buildGistReportURL(gistHTMLURL, reportFilename string) string {
 }
 
 // buildGistFileAnchor converts a gist filename to GitHub's file anchor format.
-// Example: "my_report.md" -> "file-my-report-md".
+// Example: "my_report.md" -> "file-my_report-md".
 func buildGistFileAnchor(filename string) string {
 	if filename == "" {
 		return ""
@@ -192,7 +192,7 @@ func buildGistFileAnchor(filename string) string {
 	lastDash := false
 	for _, r := range lower {
 		isAlphaNum := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
-		if isAlphaNum {
+		if isAlphaNum || r == '_' {
 			b.WriteRune(r)
 			lastDash = false
 			continue

@@ -130,6 +130,8 @@ outputs:
     description: >-
       URL to the rendered Markdown scan report section in the gist
       (gist.github.com with file anchor).
+      Anchor format follows GitHub's rendered file IDs
+      (e.g., my_file.md -> #file-my_file-md).
       Only set when gist-token and gist-id are configured.
       Can be used as the badge link target so clicking the badge
       opens the full vulnerability report.

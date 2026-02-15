@@ -237,8 +237,9 @@ func TestBuildGistFileAnchor(t *testing.T) {
 		want string
 	}{
 		{name: "basic md", in: "grype-release.md", want: "file-grype-release-md"},
-		{name: "underscores", in: "grype_me-action_release.md", want: "file-grype-me-action-release-md"},
+		{name: "underscores", in: "grype_me-action_release.md", want: "file-grype_me-action_release-md"},
 		{name: "mixed chars", in: "My Report (Nightly).md", want: "file-my-report-nightly-md"},
+		{name: "docker image", in: "grype_me-docker_image.md", want: "file-grype_me-docker_image-md"},
 		{name: "empty", in: "", want: ""},
 	}
 
