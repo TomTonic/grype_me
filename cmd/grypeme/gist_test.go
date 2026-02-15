@@ -93,6 +93,9 @@ func TestUpdateGist_Success(t *testing.T) {
 	if result.ReportURL == "" {
 		t.Error("ReportURL should not be empty")
 	}
+	if result.ReportURL != "https://gist.github.com/user/abc123#file-grype-release-md" {
+		t.Errorf("ReportURL = %q, want rendered gist anchor URL", result.ReportURL)
+	}
 }
 
 func TestUpdateGist_APIError(t *testing.T) {
@@ -222,6 +225,28 @@ func TestDefaultGistFilenames(t *testing.T) {
 			}
 			if grype != tt.wantGrype {
 				t.Errorf("grype = %q, want %q", grype, tt.wantGrype)
+			}
+		})
+	}
+}
+
+func TestBuildGistFileAnchor(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "basic md", in: "grype-release.md", want: "file-grype-release-md"},
+		{name: "underscores", in: "grype_me-action_release.md", want: "file-grype-me-action-release-md"},
+		{name: "mixed chars", in: "My Report (Nightly).md", want: "file-my-report-nightly-md"},
+		{name: "empty", in: "", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildGistFileAnchor(tt.in)
+			if got != tt.want {
+				t.Errorf("buildGistFileAnchor(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
 	}

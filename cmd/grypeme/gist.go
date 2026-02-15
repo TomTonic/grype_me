@@ -53,7 +53,7 @@ type gistFileInfo struct {
 type GistResult struct {
 	GistURL   string // HTML URL of the gist (e.g., https://gist.github.com/user/abc123)
 	BadgeURL  string // shields.io endpoint URL pointing to the badge JSON in the gist
-	ReportURL string // Raw URL of the Markdown report file in the gist
+	ReportURL string // HTML URL of the Markdown report section in the gist
 }
 
 // UpdateGist writes files to a GitHub Gist and returns the resulting URLs.
@@ -115,13 +115,13 @@ func (c *GistClient) UpdateGist(gistID, badgeFilename, reportFilename string, fi
 		GistURL: gistResp.HTMLURL,
 	}
 
-	// Extract raw URLs for badge and report files
+	// Extract URLs for badge and report files
 	if fi, ok := gistResp.Files[badgeFilename]; ok {
 		// Strip commit hash from raw URL for a stable endpoint
 		result.BadgeURL = buildEndpointBadgeURL(fi.RawURL)
 	}
-	if fi, ok := gistResp.Files[reportFilename]; ok {
-		result.ReportURL = fi.RawURL
+	if _, ok := gistResp.Files[reportFilename]; ok {
+		result.ReportURL = buildGistReportURL(gistResp.HTMLURL, reportFilename)
 	}
 
 	return result, nil
@@ -165,4 +165,48 @@ func defaultGistFilenames(customBase, scanMode string) (badgeFilename, reportFil
 		base = fmt.Sprintf("grype-%s", scanMode)
 	}
 	return base + ".json", base + ".md", base + "-grype.json"
+}
+
+// buildGistReportURL creates a rendered Gist URL with file anchor.
+// Example: https://gist.github.com/user/id#file-my-report-md
+func buildGistReportURL(gistHTMLURL, reportFilename string) string {
+	anchor := buildGistFileAnchor(reportFilename)
+	if anchor == "" {
+		return gistHTMLURL
+	}
+	return gistHTMLURL + "#" + anchor
+}
+
+// buildGistFileAnchor converts a gist filename to GitHub's file anchor format.
+// Example: "my_report.md" -> "file-my-report-md".
+func buildGistFileAnchor(filename string) string {
+	if filename == "" {
+		return ""
+	}
+
+	lower := strings.ToLower(filename)
+	var b strings.Builder
+	b.Grow(len(lower) + len("file-"))
+	b.WriteString("file-")
+
+	lastDash := false
+	for _, r := range lower {
+		isAlphaNum := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if isAlphaNum {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+
+	anchor := strings.TrimSuffix(b.String(), "-")
+	if anchor == "file" || anchor == "file-" {
+		return ""
+	}
+	return anchor
 }
