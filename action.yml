@@ -1,6 +1,6 @@
 ---
-name: 'Grype-scan Me'
-description: 'Scan your repository for vulnerabilities using Anchore Grype (software supply chain security)'
+name: 'grype_me'
+description: 'An easy to use Action to scan the supply chain of your project for known vulnerabilities using Anchore Grype and generate badges.'
 branding:
   icon: 'shield'
   color: 'blue'
@@ -23,7 +23,7 @@ inputs:
   # === Artifact-based scanning (mutually exclusive with 'scan') ===
   image:
     description: >-
-      Container image to scan (e.g., 'myapp:latest', 'ghcr.io/org/app:v1').
+      Container image to scan (e.g., 'myapp:latest', 'ghcr.io/org/app:v1.2.3').
       The image must be available locally (pulled or built) or in a registry.
       Mutually exclusive with scan/path/sbom.
     required: false
