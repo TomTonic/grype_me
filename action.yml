@@ -1,8 +1,8 @@
 ---
 name: 'grype_me'
 description: >-
-  An easy to use Action to scan the supply chain of your project for known
-  vulnerabilities using Anchore Grype and generate badges.
+  Scan repositories or artifacts with Anchore Grype; publish vulnerability
+  badges and linked Markdown reports.
 branding:
   icon: 'shield'
   color: 'blue'
