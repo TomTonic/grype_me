@@ -71,6 +71,7 @@ type Config struct {
 	OnlyFixed      bool   // If true, only report vulnerabilities that have fixes available
 	DBUpdate       bool   // If true, update the Grype vulnerability database before scanning
 	Debug          bool   // If true, print debug information including environment variables
+	Description    string // Optional free-text description included verbatim in the Markdown report
 
 	// Gist integration (optional)
 	GistToken    string // GitHub token with gist scope for writing badge + report to a gist

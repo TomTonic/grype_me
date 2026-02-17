@@ -271,14 +271,17 @@ func TestGenerateReport(t *testing.T) {
 
 	stats := VulnerabilityStats{Total: 3, Critical: 1, High: 1, Low: 1}
 	fixedTime := time.Date(2026, 2, 15, 10, 30, 0, 0, time.UTC)
-	report := generateReportAt(output, stats, "release", fixedTime)
+	description := "Nightly release scan for **core services**"
+	report := generateReportAt(output, stats, "release", description, fixedTime)
 
 	checks := []struct {
 		desc string
 		want string
 	}{
-		{"grype version header", "# ✊ grype 0.87.0"},
+		{"new report header", "# ✊ grype_me — Vulnerability Scan Report"},
+		{"description section", "**Description:** Nightly release scan for **core services**"},
 		{"scan mode", "**Scan mode:** release"},
+		{"grype version line", "**grype version:** 0.87.0"},
 		{"DB version", "**DB version:** 2026-02-15"},
 		{"scan timestamp", "2026-02-15 10:30 UTC"},
 		{"critical count", "| Critical | 1 |"},
@@ -312,7 +315,7 @@ func TestGenerateReport_NoVulnerabilities(t *testing.T) {
 
 	stats := VulnerabilityStats{Total: 0}
 	fixedTime := time.Date(2026, 2, 15, 10, 30, 0, 0, time.UTC)
-	report := generateReportAt(output, stats, "head", fixedTime)
+	report := generateReportAt(output, stats, "head", "", fixedTime)
 
 	if !strings.Contains(report, "No vulnerabilities found") {
 		t.Error("report should indicate no vulnerabilities")
