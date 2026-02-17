@@ -23,6 +23,7 @@ func loadConfig() Config {
 		OnlyFixed:      parseBoolEnv("INPUT_ONLY-FIXED", false),
 		DBUpdate:       parseBoolEnv("INPUT_DB-UPDATE", false),
 		Debug:          parseBoolEnv("INPUT_DEBUG", false),
+		Description:    getEnv("INPUT_DESCRIPTION", ""),
 		GistToken:      getEnv("INPUT_GIST-TOKEN", ""),
 		GistID:         getEnv("INPUT_GIST-ID", ""),
 		GistFilename:   getEnv("INPUT_GIST-FILENAME", ""),

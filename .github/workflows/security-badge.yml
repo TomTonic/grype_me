@@ -47,6 +47,9 @@ jobs:
         uses: TomTonic/grype_me@v1 # don't pin, rolling tag changes daily
         with:
           scan: 'latest_release'
+          description: |
+            Automated nightly scan of the latest stable release tag of this repository.
+            This report powers the "Vulnerabilities of Action" badge in README.
           fail-build: false
           gist-token: ${{ secrets.GIST_TOKEN }}
           gist-id: ${{ vars.GRYPE_BADGE_GIST_ID }}
@@ -57,6 +60,9 @@ jobs:
         uses: TomTonic/grype_me@v1 # don't pin, rolling tag changes daily
         with:
           image: ghcr.io/tomtonic/grype_me:latest
+          description: |
+            Automated nightly scan of the published Docker image `ghcr.io/tomtonic/grype_me:latest`.
+            This report powers the "Vulnerabilities of Docker Image" badge in README.
           fail-build: false
           gist-token: ${{ secrets.GIST_TOKEN }}
           gist-id: ${{ vars.GRYPE_BADGE_GIST_ID }}

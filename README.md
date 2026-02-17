@@ -13,6 +13,9 @@ An easy to use GitHub Action to scan the supply chain of your project for known 
 - uses: TomTonic/grype_me@v1
   with:
     scan: 'latest_release'
+    description: |
+      Nightly vulnerability scan of latest stable release.
+      Includes application dependencies from source manifests.
     fail-build: false
     gist-token: ${{ secrets.GIST_TOKEN }}
     gist-id: ${{ vars.GRYPE_BADGE_GIST_ID }}
@@ -86,6 +89,9 @@ jobs:
       - uses: TomTonic/grype_me@v1
         with:
           scan: 'latest_release'
+          description: |
+            Nightly release scan for the public badge report.
+            Scans the latest semver tag in this repository.
           fail-build: false
           gist-token: ${{ secrets.GIST_TOKEN }}
           gist-id: ${{ vars.GRYPE_BADGE_GIST_ID }}
@@ -106,6 +112,9 @@ This writes three files to the gist:
 - uses: TomTonic/grype_me@v1
   with:
     image: 'myapp:${{ github.sha }}'
+    description: |
+      PR build image scan for commit `${{ github.sha }}`.
+      Used as release gate for container publishing.
     fail-build: true
     severity-cutoff: 'high'
 ```
@@ -149,6 +158,7 @@ GitHub gist file anchors are based on rendered DOM IDs (for example, `my_file.md
 | `output-file` | Save results to JSON file | – |
 | `only-fixed` | Only report vulnerabilities with fixes available | `false` |
 | `db-update` | Update DB before scanning (see [Performance](#performance)) | `false` |
+| `description` | Optional free text (supports Markdown/line breaks) copied verbatim into report `.md` under `Description:` | – |
 
 ### Gist Integration
 
