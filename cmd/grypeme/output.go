@@ -172,35 +172,39 @@ func generateBadgeJSON(stats VulnerabilityStats, grypeVersion, dbBuilt, scanMode
 
 // generateReport creates a Markdown vulnerability report suitable for storing in a gist.
 // Includes a summary table and a detailed CVE table with package info, fix versions, and data source links.
-func generateReport(output *GrypeOutput, stats VulnerabilityStats, scanMode string) string {
-	return generateReportAt(output, stats, scanMode, time.Now().UTC())
+func generateReport(output *GrypeOutput, stats VulnerabilityStats, scanMode, description string) string {
+	return generateReportAt(output, stats, scanMode, description, time.Now().UTC())
 }
 
 // generateReportAt creates a Markdown report with a specific timestamp (for testability).
-func generateReportAt(output *GrypeOutput, stats VulnerabilityStats, scanMode string, now time.Time) string {
+func generateReportAt(output *GrypeOutput, stats VulnerabilityStats, scanMode, description string, now time.Time) string {
 	var b strings.Builder
 
 	grypeVersion := output.Descriptor.Version
 	dbDate := extractDBDate(output.DBBuilt())
 
-	b.WriteString(fmt.Sprintf("# ✊ grype %s — Vulnerability Scan Report\n\n", grypeVersion))
-	b.WriteString(fmt.Sprintf("**Scan mode:** %s  \n", scanMode))
-	b.WriteString(fmt.Sprintf("**DB version:** %s  \n", dbDate))
-	b.WriteString(fmt.Sprintf("**Scanned:** %s  \n", now.Format("2006-01-02 15:04 UTC")))
-	b.WriteString(fmt.Sprintf("**Total CVEs:** %d\n\n", stats.Total))
+	b.WriteString("# ✊ grype_me — Vulnerability Scan Report\n\n")
+	if description != "" {
+		fmt.Fprintf(&b, "**Description:** %s \n", description)
+	}
+	fmt.Fprintf(&b, "**Scan mode:** %s  \n", scanMode)
+	fmt.Fprintf(&b, "**grype version:** %s  \n", grypeVersion)
+	fmt.Fprintf(&b, "**DB version:** %s  \n", dbDate)
+	fmt.Fprintf(&b, "**Scanned:** %s  \n", now.Format("2006-01-02 15:04 UTC"))
+	fmt.Fprintf(&b, "**Total CVEs:** %d\n\n", stats.Total)
 
 	// Summary table
 	b.WriteString("## Summary\n\n")
 	b.WriteString("| Severity | Count |\n")
 	b.WriteString("|----------|------:|\n")
-	b.WriteString(fmt.Sprintf("| Critical | %d |\n", stats.Critical))
-	b.WriteString(fmt.Sprintf("| High | %d |\n", stats.High))
-	b.WriteString(fmt.Sprintf("| Medium | %d |\n", stats.Medium))
-	b.WriteString(fmt.Sprintf("| Low | %d |\n", stats.Low))
+	fmt.Fprintf(&b, "| Critical | %d |\n", stats.Critical)
+	fmt.Fprintf(&b, "| High | %d |\n", stats.High)
+	fmt.Fprintf(&b, "| Medium | %d |\n", stats.Medium)
+	fmt.Fprintf(&b, "| Low | %d |\n", stats.Low)
 	if stats.Other > 0 {
-		b.WriteString(fmt.Sprintf("| Other | %d |\n", stats.Other))
+		fmt.Fprintf(&b, "| Other | %d |\n", stats.Other)
 	}
-	b.WriteString(fmt.Sprintf("| **Total** | **%d** |\n", stats.Total))
+	fmt.Fprintf(&b, "| **Total** | **%d** |\n", stats.Total)
 
 	// Detailed CVE table (only if vulnerabilities found)
 	if stats.Total > 0 {
@@ -219,14 +223,14 @@ func generateReportAt(output *GrypeOutput, stats VulnerabilityStats, scanMode st
 			if m.Vulnerability.DataSource != "" {
 				source = fmt.Sprintf("[link](%s)", m.Vulnerability.DataSource)
 			}
-			b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s |\n",
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s |\n",
 				m.Vulnerability.ID,
 				m.Vulnerability.Severity,
 				m.Artifact.Name,
 				m.Artifact.Version,
 				fixed,
 				desc,
-				source))
+				source)
 		}
 	} else {
 		b.WriteString("\n✅ No vulnerabilities found.\n")

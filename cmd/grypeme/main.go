@@ -131,7 +131,7 @@ func processResults(config Config, output *GrypeOutput, rawJSON []byte) error {
 	var gistBadgeURL string
 	if config.GistToken != "" && config.GistID != "" {
 		badgeJSON := generateBadgeJSON(stats, output.Descriptor.Version, output.DBBuilt(), scanMode)
-		report := generateReport(output, stats, scanMode)
+		report := generateReport(output, stats, scanMode, config.Description)
 
 		badgeFile, reportFile, grypeFile := defaultGistFilenames(config.GistFilename, scanMode)
 

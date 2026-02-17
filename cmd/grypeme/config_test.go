@@ -110,6 +110,7 @@ func TestLoadConfig(t *testing.T) {
 	t.Setenv("INPUT_OUTPUT-FILE", "results.json")
 	t.Setenv("INPUT_ONLY-FIXED", "true")
 	t.Setenv("INPUT_DEBUG", "false")
+	t.Setenv("INPUT_DESCRIPTION", "Nightly scan of release artifact")
 	t.Setenv("INPUT_GIST-TOKEN", "ghp_test123")
 	t.Setenv("INPUT_GIST-ID", "abc123def")
 	t.Setenv("INPUT_GIST-FILENAME", "my-scan")
@@ -127,6 +128,9 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if !config.OnlyFixed {
 		t.Error("config.OnlyFixed should be true")
+	}
+	if config.Description != "Nightly scan of release artifact" {
+		t.Errorf("config.Description = %v, want Nightly scan of release artifact", config.Description)
 	}
 	if config.GistToken != "ghp_test123" {
 		t.Errorf("config.GistToken = %v, want ghp_test123", config.GistToken)
