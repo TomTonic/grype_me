@@ -79,6 +79,13 @@ inputs:
       Warning: may expose sensitive data in logs.
     required: false
     default: 'false'
+  description:
+    description: >-
+      Optional free-text description of what was scanned.
+      Supports arbitrary text including Markdown formatting and line breaks.
+      Included verbatim in the generated Markdown report under "Description:".
+    required: false
+    default: ''
   gist-token:
     description: >-
       A GitHub personal access token (classic) with 'gist' scope.
