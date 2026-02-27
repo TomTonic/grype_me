@@ -2,7 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended", "schedule:daily"],
   "dependencyDashboard": true,
-  "enabledManagers": ["github-actions", "dockerfile", "gomod"],
+  "enabledManagers": ["github-actions", "dockerfile", "gomod", "pip_requirements"],
   "labels": ["dependencies"],
   "packageRules": [
     {
@@ -30,6 +30,12 @@
       "matchManagers": ["dockerfile"],
       "pinDigests": true,
       "groupName": "docker-base-images"
+    },
+    {
+      "description": "Manage pinned yamllint requirements",
+      "matchManagers": ["pip_requirements"],
+      "matchFileNames": [".github/workflows/yamllint-requirements.txt"],
+      "groupName": "python-lint"
     }
   ],
   "prConcurrentLimit": 8,
