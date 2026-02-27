@@ -15,11 +15,13 @@ name: Move Action Tags
         default: ''
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   move-tags:
     name: Update moving tags (vX, vX.Y, vX.Y.Z)
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - name: Update moving tags
