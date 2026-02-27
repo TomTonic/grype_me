@@ -1,10 +1,15 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", "github-actions:pinDigests", "schedule:daily"],
+  "extends": ["config:recommended", "schedule:daily"],
   "dependencyDashboard": true,
   "enabledManagers": ["github-actions", "dockerfile", "gomod"],
   "labels": ["dependencies"],
   "packageRules": [
+    {
+      "description": "Pin digests for all GitHub Actions (Scorecards requirement)",
+      "matchManagers": ["github-actions"],
+      "pinDigests": true
+    },
     {
       "description": "Auto-update rolling TomTonic/grype_me action (nightly rebuild around 06:53 UTC)",
       "matchManagers": ["github-actions"],
