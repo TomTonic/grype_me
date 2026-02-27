@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewGistClient(t *testing.T) {
@@ -19,6 +20,9 @@ func TestNewGistClient(t *testing.T) {
 	}
 	if c.HTTPClient == nil {
 		t.Error("HTTPClient should not be nil")
+	}
+	if c.HTTPClient.Timeout != 30*time.Second {
+		t.Errorf("HTTPClient.Timeout = %v, want %v", c.HTTPClient.Timeout, 30*time.Second)
 	}
 }
 

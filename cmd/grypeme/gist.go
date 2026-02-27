@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // GistClient handles communication with the GitHub Gist API.
@@ -23,7 +24,7 @@ type GistClient struct {
 func NewGistClient(token string) *GistClient {
 	return &GistClient{
 		Token:      token,
-		HTTPClient: http.DefaultClient,
+		HTTPClient: &http.Client{Timeout: 30 * time.Second},
 		BaseURL:    "https://api.github.com",
 	}
 }
