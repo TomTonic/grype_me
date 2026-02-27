@@ -44,7 +44,7 @@ jobs:
 
       - name: Scan latest release of GitHub Action
         id: grype_me_release
-        uses: TomTonic/grype_me@v1 # don't pin, rolling tag changes daily
+        uses: TomTonic/grype_me@f322b38c1b41f11283aa5d2281e01a59c9537226 # v1 # don't pin, rolling tag changes daily
         with:
           scan: 'latest_release'
           description: |
@@ -57,7 +57,7 @@ jobs:
 
       - name: Scan nightly Docker image
         id: grype_me_image
-        uses: TomTonic/grype_me@v1 # don't pin, rolling tag changes daily
+        uses: TomTonic/grype_me@f322b38c1b41f11283aa5d2281e01a59c9537226 # v1 # don't pin, rolling tag changes daily
         with:
           image: ghcr.io/tomtonic/grype_me:latest
           description: |
