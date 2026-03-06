@@ -38,16 +38,23 @@ RUN echo "$GRYPE_CACHEBUST" >/dev/null && /tmp/grype/grype db update
 FROM alpine:3.23@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659
 
 # Install runtime dependencies (git needed for repo scans)
-RUN apk add --no-cache ca-certificates bash git
+RUN apk add --no-cache ca-certificates git
+
+# Create unprivileged runtime user and writable runtime directories.
+RUN addgroup -S grype && adduser -S -G grype -u 10001 grype && \
+    mkdir -p /home/grype/.cache/grype /tmp /github/workspace && \
+    chown -R grype:grype /home/grype /tmp /github/workspace
 
 # Copy verified grype binary from installer stage
 COPY --from=grype-installer /tmp/grype/grype /usr/local/bin/grype
 
 # Copy pre-downloaded vulnerability database
-COPY --from=grype-installer /root/.cache/grype /root/.cache/grype
+COPY --from=grype-installer /root/.cache/grype /home/grype/.cache/grype
+RUN chown -R grype:grype /home/grype/.cache/grype
 
 # Ensure Grype uses the baked-in DB regardless of HOME/XDG cache paths.
-ENV GRYPE_DB_CACHE_DIR=/root/.cache/grype/db
+ENV HOME=/home/grype
+ENV GRYPE_DB_CACHE_DIR=/home/grype/.cache/grype/db
 
 # Copy the built application
 COPY --from=builder /app/grype-action /usr/local/bin/grype-action
@@ -55,6 +62,9 @@ COPY --from=builder /app/grype-action /usr/local/bin/grype-action
 # Set working directory to GitHub Actions workspace mount point
 # This ensures the action runs in the workspace directory where files are accessible
 WORKDIR /github/workspace
+
+# Drop root privileges for runtime.
+USER grype
 
 # Set the entrypoint
 ENTRYPOINT ["/usr/local/bin/grype-action"]

@@ -1,9 +1,6 @@
 package main
 
-import (
-	"os/exec"
-	"testing"
-)
+import "testing"
 
 func TestValidateRefName(t *testing.T) {
 	tests := []struct {
@@ -57,14 +54,10 @@ func TestIsPreReleaseTag(t *testing.T) {
 	}
 }
 
-func TestConfigureGitSafeDirectory(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-
-	err := configureGitSafeDirectory()
-	if err != nil {
-		t.Errorf("configureGitSafeDirectory() error = %v", err)
+func TestGitCommand(t *testing.T) {
+	cmd := gitCommand("status")
+	if cmd.Path == "" {
+		t.Fatal("gitCommand returned command without path")
 	}
 }
 

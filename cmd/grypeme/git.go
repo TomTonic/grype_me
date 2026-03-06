@@ -8,28 +8,27 @@ import (
 	"strings"
 )
 
-// configureGitSafeDirectory adds the current working directory to Git's safe.directory config.
-// This is necessary when running in a Docker container where the workspace may be owned
-// by a different user than the Git process.
-func configureGitSafeDirectory() error {
+// gitSafeConfigArgs returns per-command safe.directory config arguments.
+// This avoids writing to global git config in read-only or restricted environments.
+func gitSafeConfigArgs() []string {
+	args := []string{}
+
 	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+	if err == nil && cwd != "" {
+		args = append(args, "-c", "safe.directory="+cwd)
 	}
 
-	// Add current directory to safe.directory
-	cmd := exec.Command("git", "config", "--global", "--add", "safe.directory", cwd)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to configure git safe.directory: %w", err)
-	}
-
-	// Also add GITHUB_WORKSPACE if in GitHub Actions Docker environment
 	if workspace := os.Getenv("GITHUB_WORKSPACE"); workspace != "" && workspace != cwd {
-		cmd = exec.Command("git", "config", "--global", "--add", "safe.directory", workspace)
-		_ = cmd.Run() // Non-fatal if this fails
+		args = append(args, "-c", "safe.directory="+workspace)
 	}
 
-	return nil
+	return args
+}
+
+// gitCommand builds a git command with safe.directory options to prevent ownership errors.
+func gitCommand(args ...string) *exec.Cmd {
+	fullArgs := append(gitSafeConfigArgs(), args...)
+	return exec.Command("git", fullArgs...)
 }
 
 // getLatestReleaseTag returns the latest stable release tag from the repository.
@@ -42,7 +41,7 @@ func getLatestReleaseTag() (string, error) {
 
 	// Fetch all tags to ensure we have the latest
 	fmt.Println("Fetching tags...")
-	fetchCmd := exec.Command("git", "fetch", "--tags", "--force")
+	fetchCmd := gitCommand("fetch", "--tags", "--force")
 	fetchCmd.Stdout = os.Stdout
 	fetchCmd.Stderr = os.Stderr
 	if err := fetchCmd.Run(); err != nil {
@@ -50,7 +49,7 @@ func getLatestReleaseTag() (string, error) {
 	}
 
 	// Get all tags sorted by version (descending)
-	listCmd := exec.Command("git", "tag", "--sort=-v:refname")
+	listCmd := gitCommand("tag", "--sort=-v:refname")
 	output, err := listCmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to list tags: %w", err)
@@ -145,7 +144,7 @@ func checkoutToWorktree(ref string) (string, error) {
 	fmt.Printf("Creating temporary worktree at %s for ref %s\n", tmpDir, ref)
 
 	// Add the worktree in detached HEAD mode
-	worktreeCmd := exec.Command("git", "worktree", "add", "--detach", tmpDir, ref)
+	worktreeCmd := gitCommand("worktree", "add", "--detach", tmpDir, ref)
 	worktreeCmd.Stdout = os.Stdout
 	worktreeCmd.Stderr = os.Stderr
 	if err := worktreeCmd.Run(); err != nil {
@@ -167,7 +166,7 @@ func cleanupWorktree(worktreeDir string) {
 	fmt.Printf("Cleaning up temporary worktree at %s\n", worktreeDir)
 
 	// Remove the worktree from Git's tracking
-	removeCmd := exec.Command("git", "worktree", "remove", "--force", worktreeDir)
+	removeCmd := gitCommand("worktree", "remove", "--force", worktreeDir)
 	if err := removeCmd.Run(); err != nil {
 		fmt.Printf("Warning: git worktree remove failed: %v\n", err)
 	}
@@ -181,11 +180,6 @@ func cleanupWorktree(worktreeDir string) {
 // handleRepoScan handles repository-based scanning (latest_release, head, or specific ref).
 // Returns (target, tempDir, error) where tempDir is set if a temporary worktree was created.
 func handleRepoScan(scanMode string) (string, string, error) {
-	// Configure Git safe directories for Docker container environment
-	if err := configureGitSafeDirectory(); err != nil {
-		fmt.Printf("Warning: %v\n", err)
-	}
-
 	fmt.Printf("Repository scan mode: %s\n", scanMode)
 
 	switch strings.ToLower(scanMode) {
