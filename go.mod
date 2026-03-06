@@ -1,3 +1,3 @@
 module github.com/TomTonic/grype_me
 
-go 1.26
+go 1.26.1
