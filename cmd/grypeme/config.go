@@ -15,6 +15,7 @@ func loadConfig() Config {
 	return Config{
 		Scan:           getEnv("INPUT_SCAN", ""),
 		Image:          getEnv("INPUT_IMAGE", ""),
+		ImageSource:    strings.ToLower(getEnv("INPUT_IMAGE-SOURCE", "auto")),
 		Path:           getEnv("INPUT_PATH", ""),
 		SBOM:           getEnv("INPUT_SBOM", ""),
 		FailBuild:      parseBoolEnv("INPUT_FAIL-BUILD", false),
@@ -68,10 +69,42 @@ func printDebugEnv() {
 
 	sort.Strings(relevantVars)
 	for _, envVar := range relevantVars {
-		fmt.Println(envVar)
+		fmt.Println(redactEnvVar(envVar))
 	}
 
 	fmt.Println("======================================")
+}
+
+// redactEnvVar masks sensitive environment variable values in debug output.
+func redactEnvVar(envVar string) string {
+	parts := strings.SplitN(envVar, "=", 2)
+	if len(parts) != 2 {
+		return envVar
+	}
+
+	key := parts[0]
+	if isSensitiveEnvKey(key) {
+		return key + "=***REDACTED***"
+	}
+
+	return envVar
+}
+
+func isSensitiveEnvKey(key string) bool {
+	upper := strings.ToUpper(key)
+
+	if upper == "INPUT_GIST-TOKEN" {
+		return true
+	}
+
+	sensitiveSubstrings := []string{"TOKEN", "SECRET", "PASSWORD", "PASS", "KEY"}
+	for _, marker := range sensitiveSubstrings {
+		if strings.Contains(upper, marker) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // determineScanMode returns a human-readable scan mode string for display and badge labels.

@@ -60,9 +60,10 @@ type Config struct {
 	Scan string
 
 	// Artifact modes - mutually exclusive with each other and with Scan
-	Image string // Container image reference to scan (e.g., "alpine:latest")
-	Path  string // Local directory or file path to scan
-	SBOM  string // Path to an SBOM file to scan (CycloneDX, SPDX, or Syft formats)
+	Image       string // Container image reference to scan (e.g., "alpine:latest")
+	ImageSource string // Source for image scans: auto, registry, docker, podman, containerd
+	Path        string // Local directory or file path to scan
+	SBOM        string // Path to an SBOM file to scan (CycloneDX, SPDX, or Syft formats)
 
 	// Scan behavior options
 	FailBuild      bool   // If true, exit with error when vulnerabilities exceed severity cutoff
