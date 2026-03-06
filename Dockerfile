@@ -1,6 +1,6 @@
 ARG GRYPE_CACHEBUST=0
 
-FROM golang:1.26-alpine@sha256:d4c4845f5d60c6a974c6000ce58ae079328d03ab7f721a0734277e69905473e5 AS builder
+FROM golang:1.26.1-alpine3.23@sha256:2389ebfa5b7f43eeafbd6be0c3700cc46690ef842ad962f6c5bd6be49ed82039 AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates
