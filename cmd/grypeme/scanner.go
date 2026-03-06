@@ -72,6 +72,9 @@ func countNonEmpty(values ...string) int {
 // Returns (target, error) where target is empty if no artifact mode is configured.
 func getArtifactTarget(config Config) (string, error) {
 	if config.Image != "" {
+		if err := validateImageSource(config.ImageSource); err != nil {
+			return "", err
+		}
 		return config.Image, nil
 	}
 
@@ -152,11 +155,35 @@ func runGrypeScan(config Config, target, outputPath string) error {
 func buildGrypeArgs(target, outputPath string, config Config) []string {
 	args := []string{target, "-o", "json", "--file", outputPath}
 
+	if config.Image != "" && config.ImageSource != "" && config.ImageSource != "auto" {
+		args = append(args, "--from", config.ImageSource)
+	}
+
 	if config.OnlyFixed {
 		args = append(args, "--only-fixed")
 	}
 
 	return args
+}
+
+// validateImageSource checks if the configured image source is supported.
+func validateImageSource(source string) error {
+	if source == "" || source == "auto" {
+		return nil
+	}
+
+	allowed := map[string]bool{
+		"docker":     true,
+		"podman":     true,
+		"containerd": true,
+		"registry":   true,
+	}
+
+	if !allowed[source] {
+		return fmt.Errorf("invalid image-source %q (allowed: auto, docker, podman, containerd, registry)", source)
+	}
+
+	return nil
 }
 
 // parseGrypeOutput reads and parses the JSON output file from a Grype scan.
