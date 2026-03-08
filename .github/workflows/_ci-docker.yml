@@ -73,7 +73,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mode='${{ steps.privilege-default.outputs.runtime-privilege }}'
+          mode="${{ steps.privilege-default.outputs['runtime-privilege'] }}"
           if [[ -z "$mode" ]]; then
             echo "runtime-privilege output is missing in default mode" >&2
             exit 1
@@ -104,10 +104,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mode='${{ steps.privilege-strict.outputs.runtime-privilege }}'
+          mode="${{ steps.privilege-strict.outputs['runtime-privilege'] }}"
           if [[ "$mode" != "dropped" && "$mode" != "already-non-root" ]]; then
             echo "Strict mode requires non-root runtime, got: $mode" >&2
-            echo "Detail: ${{ steps.privilege-strict.outputs.runtime-privilege-detail }}" >&2
+            echo "Detail: ${{ steps.privilege-strict.outputs['runtime-privilege-detail'] }}" >&2
             exit 1
           fi
 
