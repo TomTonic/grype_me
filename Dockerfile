@@ -1,15 +1,13 @@
 ARG GRYPE_CACHEBUST=0
 
-FROM golang:1.26.1-alpine3.23@sha256:2389ebfa5b7f43eeafbd6be0c3700cc46690ef842ad962f6c5bd6be49ed82039 AS builder
+FROM golang:1.26.1-bookworm AS builder
 
-# Install build dependencies
-RUN apk add --no-cache git ca-certificates
+# Builder uses only Go toolchain and module downloads; no extra OS packages needed.
 
 WORKDIR /app
 
 # Copy go module files
-COPY go.mod ./
-# go.sum may not exist for modules without external dependencies
+COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy source code
@@ -18,7 +16,18 @@ COPY cmd/ ./cmd/
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o grype-action ./cmd/grypeme
 
-# Installer stage: fetch grype with signature verification (cosign present only here)
+# Prepare runtime directory skeleton for scratch image.
+RUN mkdir -p /opt/runtime/home/grype/.cache/grype /opt/runtime/home/grype/tmp /opt/runtime/github/workspace && \
+    touch /opt/runtime/home/grype/.keep /opt/runtime/home/grype/tmp/.keep /opt/runtime/github/workspace/.keep
+
+# Installer stage: fetch grype with signature verification.
+# Kept on Alpine intentionally:
+# - `cosign` is straightforward to install via `apk`
+# - this stage is not shipped in the final runtime image
+# - runtime attack surface is still governed by the scratch final stage
+#
+# Using Bookworm here could reuse a Debian base layer, but cache reuse is mostly
+# a build-time performance optimization and does not improve runtime security.
 FROM alpine:3.23@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659 AS grype-installer
 
 ARG GRYPE_CACHEBUST
@@ -34,27 +43,27 @@ RUN echo "$GRYPE_CACHEBUST" >/dev/null && \
 # Download vulnerability database at build time for faster runtime
 RUN echo "$GRYPE_CACHEBUST" >/dev/null && /tmp/grype/grype db update
 
-# Final stage - copy grype, the database, and the built application into a minimal image
-FROM alpine:3.23@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659
+# Final stage - scratch for minimal attack surface.
+FROM scratch
 
-# Install runtime dependencies (git needed for repo scans)
-RUN apk add --no-cache ca-certificates git && apk upgrade --no-cache
+# Runtime trust store for outbound HTTPS (grype DB/API and GitHub APIs).
+COPY --from=grype-installer /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-# Create unprivileged runtime user and writable runtime directories.
-RUN addgroup -S grype && adduser -S -G grype -u 10001 grype && \
-    mkdir -p /home/grype/.cache/grype /tmp /github/workspace && \
-    chown -R grype:grype /home/grype /tmp /github/workspace
+# Create runtime paths with explicit ownership for the non-privileged user.
+COPY --from=builder --chown=10001:10001 /opt/runtime/home/grype /home/grype
+COPY --from=builder --chown=10001:10001 /opt/runtime/github/workspace /github/workspace
 
 # Copy verified grype binary from installer stage
 COPY --from=grype-installer /tmp/grype/grype /usr/local/bin/grype
 
-# Copy pre-downloaded vulnerability database
-COPY --from=grype-installer /root/.cache/grype /home/grype/.cache/grype
-RUN chown -R grype:grype /home/grype/.cache/grype
+# Copy pre-downloaded vulnerability database with proper ownership
+COPY --from=grype-installer --chown=10001:10001 /root/.cache/grype /home/grype/.cache/grype
 
-# Ensure Grype uses the baked-in DB regardless of HOME/XDG cache paths.
+# Ensure Grype uses the baked-in DB and TLS trust store in scratch runtime.
 ENV HOME=/home/grype
 ENV GRYPE_DB_CACHE_DIR=/home/grype/.cache/grype/db
+ENV TMPDIR=/home/grype/tmp
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 # Copy the built application
 COPY --from=builder /app/grype-action /usr/local/bin/grype-action
@@ -63,8 +72,8 @@ COPY --from=builder /app/grype-action /usr/local/bin/grype-action
 # This ensures the action runs in the workspace directory where files are accessible
 WORKDIR /github/workspace
 
-# Drop root privileges for runtime.
-USER grype
+# Container starts as root only for startup permission fixups.
+# The Go entrypoint immediately drops to UID/GID 10001 before scanning.
 
-# Set the entrypoint
+# Set the entrypoint (Go binary handles privilege drop internally)
 ENTRYPOINT ["/usr/local/bin/grype-action"]

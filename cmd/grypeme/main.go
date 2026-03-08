@@ -25,6 +25,12 @@ import (
 )
 
 func main() {
+	// Drop privileges early for security hardening (if running as root)
+	if err := dropPrivileges(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error dropping privileges: %v\n", err)
+		os.Exit(1)
+	}
+
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
