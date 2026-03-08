@@ -3,10 +3,12 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
@@ -135,6 +137,68 @@ func TestCheckoutToWorktreeByTag(t *testing.T) {
 	}
 }
 
+func TestCheckoutToWorktreePreservesExecutableMode(t *testing.T) {
+	repoDir, tag := setupRepoWithExecutableFile(t)
+
+	oldWD, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+
+	worktreeDir, err := checkoutToWorktree(tag)
+	if err != nil {
+		t.Fatalf("checkoutToWorktree() error = %v", err)
+	}
+	t.Cleanup(func() { cleanupWorktree(worktreeDir) })
+
+	info, err := os.Stat(filepath.Join(worktreeDir, "bin", "run.sh"))
+	if err != nil {
+		t.Fatalf("expected executable file missing: %v", err)
+	}
+
+	if info.Mode().Perm() != 0755 {
+		t.Fatalf("executable mode = %o, want 755", info.Mode().Perm())
+	}
+}
+
+func TestCheckoutToWorktreeRecreatesSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior differs on Windows")
+	}
+
+	repoDir, tag := setupRepoWithSymlink(t)
+
+	oldWD, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+
+	worktreeDir, err := checkoutToWorktree(tag)
+	if err != nil {
+		t.Fatalf("checkoutToWorktree() error = %v", err)
+	}
+	t.Cleanup(func() { cleanupWorktree(worktreeDir) })
+
+	link := filepath.Join(worktreeDir, "README.link")
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("expected symlink missing: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected symlink, got mode %v", info.Mode())
+	}
+
+	target, err := os.Readlink(link)
+	if err != nil {
+		t.Fatalf("Readlink failed: %v", err)
+	}
+	if target != "README.md" {
+		t.Fatalf("symlink target = %q, want %q", target, "README.md")
+	}
+}
+
 func setupTestRepoWithTags(t *testing.T) string {
 	t.Helper()
 
@@ -173,4 +237,95 @@ func setupTestRepoWithTags(t *testing.T) string {
 	writeAndCommit("higher minor", "v1.10.0")
 
 	return dir
+}
+
+func setupRepoWithExecutableFile(t *testing.T) (string, string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("PlainInit failed: %v", err)
+	}
+
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree failed: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+
+	scriptPath := filepath.Join(dir, "bin", "run.sh")
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho ok\n"), 0755); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	if _, err := wt.Add("bin/run.sh"); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	hash, err := wt.Commit("add executable", &git.CommitOptions{
+		Author: &object.Signature{Name: "test", Email: "test@example.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("Commit failed: %v", err)
+	}
+
+	tag := "v2.0.0"
+	if _, err := repo.CreateTag(tag, hash, nil); err != nil {
+		t.Fatalf("CreateTag failed: %v", err)
+	}
+
+	return dir, tag
+}
+
+func setupRepoWithSymlink(t *testing.T) (string, string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("PlainInit failed: %v", err)
+	}
+
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree failed: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("hello\n"), 0644); err != nil {
+		t.Fatalf("WriteFile README failed: %v", err)
+	}
+	if err := os.Symlink("README.md", filepath.Join(dir, "README.link")); err != nil {
+		t.Fatalf("Symlink failed: %v", err)
+	}
+
+	if _, err := wt.Add("README.md"); err != nil {
+		t.Fatalf("Add README failed: %v", err)
+	}
+
+	if _, err := wt.Add("README.link"); err != nil {
+		t.Fatalf("Add symlink failed: %v", err)
+	}
+
+	hash, err := wt.Commit("add symlink", &git.CommitOptions{
+		Author: &object.Signature{Name: "test", Email: "test@example.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("Commit failed: %v", err)
+	}
+
+	tag := "v3.0.0"
+	if _, err := repo.CreateTag(tag, hash, nil); err != nil {
+		t.Fatalf("CreateTag failed: %v", err)
+	}
+
+	// Ensure resolve by tag works in checkout path.
+	if _, err := repo.ResolveRevision(plumbing.Revision(tag)); err != nil {
+		t.Fatalf("ResolveRevision failed: %v", err)
+	}
+
+	return dir, tag
 }
