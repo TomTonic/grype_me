@@ -3,7 +3,9 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,6 +13,8 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 // getLatestReleaseTag returns the latest stable release tag from the repository.
@@ -249,40 +253,79 @@ func checkoutToWorktree(ref string) (string, error) {
 		return "", fmt.Errorf("failed to resolve ref %q: %w", ref, err)
 	}
 
-	// Clone to temporary directory with specific commit
-	_, err = git.PlainClone(tmpDir, false, &git.CloneOptions{
-		URL:          cwd,
-		SingleBranch: true,
-		NoCheckout:   true,
-	})
+	commit, err := repo.CommitObject(*hash)
 	if err != nil {
 		_ = os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("failed to create worktree: %w", err)
+		return "", fmt.Errorf("failed to load commit for %q: %w", ref, err)
 	}
 
-	// Checkout the specific commit in detached HEAD
-	tmpRepo, err := git.PlainOpen(tmpDir)
+	err = materializeCommitToDir(commit, tmpDir)
 	if err != nil {
 		_ = os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("failed to open worktree: %w", err)
-	}
-
-	w, err := tmpRepo.Worktree()
-	if err != nil {
-		_ = os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("failed to get worktree: %w", err)
-	}
-
-	err = w.Checkout(&git.CheckoutOptions{
-		Hash:  *hash,
-		Force: true,
-	})
-	if err != nil {
-		_ = os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("failed to checkout: %w", err)
+		return "", fmt.Errorf("failed to materialize worktree: %w", err)
 	}
 
 	return tmpDir, nil
+}
+
+// materializeCommitToDir writes a commit's tracked files into targetDir.
+// This avoids invoking a system `git` binary, which is unavailable in scratch images.
+func materializeCommitToDir(commit *object.Commit, targetDir string) error {
+	tree, err := commit.Tree()
+	if err != nil {
+		return fmt.Errorf("failed to get commit tree: %w", err)
+	}
+
+	err = tree.Files().ForEach(func(file *object.File) error {
+		destination := filepath.Join(targetDir, file.Name)
+		if err := os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
+			return fmt.Errorf("failed to create directory for %q: %w", file.Name, err)
+		}
+
+		switch file.Mode {
+		case filemode.Submodule:
+			// Submodule entries don't carry file content in-tree; skip gracefully.
+			return nil
+		case filemode.Symlink:
+			target, err := file.Contents()
+			if err != nil {
+				return fmt.Errorf("failed to read symlink target for %q: %w", file.Name, err)
+			}
+			if err := os.Symlink(target, destination); err != nil {
+				return fmt.Errorf("failed to create symlink %q: %w", file.Name, err)
+			}
+			return nil
+		default:
+			reader, err := file.Reader()
+			if err != nil {
+				return fmt.Errorf("failed to open file reader for %q: %w", file.Name, err)
+			}
+			defer func() { _ = reader.Close() }()
+
+			output, err := os.OpenFile(destination, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, modeToPermissions(file.Mode))
+			if err != nil {
+				return fmt.Errorf("failed to create file %q: %w", file.Name, err)
+			}
+			defer func() { _ = output.Close() }()
+
+			if _, err := io.Copy(output, reader); err != nil {
+				return fmt.Errorf("failed to write file %q: %w", file.Name, err)
+			}
+			return nil
+		}
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func modeToPermissions(mode filemode.FileMode) os.FileMode {
+	if mode == filemode.Executable {
+		return 0755
+	}
+	return 0644
 }
 
 // cleanupWorktree removes a temporary Git worktree and its directory.
