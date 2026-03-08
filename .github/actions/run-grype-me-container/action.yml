@@ -49,10 +49,21 @@ inputs:
     description: Host-side filename for container to write GITHUB_OUTPUT into
     required: false
     default: 'github_output.txt'
+outputs:
+  runtime-privilege:
+    description: Effective privilege mode reported by grype_me action
+    value: ${{ steps.run-container.outputs['runtime-privilege'] }}
+  runtime-privilege-detail:
+    description: Diagnostic detail for privilege mode decisions
+    value: ${{ steps.run-container.outputs['runtime-privilege-detail'] }}
+  grype-version:
+    description: Grype version output from the containerized action
+    value: ${{ steps.run-container.outputs['grype-version'] }}
 runs:
   using: composite
   steps:
     - name: Pull (optional) and run container
+      id: run-container
       shell: bash
       run: |
         set -euo pipefail
