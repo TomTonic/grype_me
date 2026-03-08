@@ -64,7 +64,40 @@ runs:
         fi
 
         mkdir -p "$GITHUB_WORKSPACE"
-        rm -f "$GITHUB_WORKSPACE/$HOST_OUT_FILE" "$GITHUB_WORKSPACE/$RESULTS_FILE"
+
+        cleanup_files() {
+          local out_path="$GITHUB_WORKSPACE/$HOST_OUT_FILE"
+          local results_path="$GITHUB_WORKSPACE/$RESULTS_FILE"
+
+          # Fast path: remove stale files as the current runner user.
+          if rm -f "$out_path" "$results_path" 2>/dev/null; then
+            return 0
+          fi
+
+          echo "Warning: initial cleanup failed (likely ownership mismatch), trying elevated cleanup"
+
+          # GitHub-hosted Linux runners provide passwordless sudo.
+          if command -v sudo >/dev/null 2>&1; then
+            sudo rm -f "$out_path" "$results_path" 2>/dev/null || true
+          fi
+
+          # Fallback for environments without sudo: remove as root via helper container.
+          if [[ -f "$out_path" || -f "$results_path" ]]; then
+            docker run --rm \
+              -v "$GITHUB_WORKSPACE:/github/workspace" \
+              --entrypoint /bin/sh \
+              alpine:3.23 \
+              -c "rm -f '/github/workspace/${HOST_OUT_FILE}' '/github/workspace/${RESULTS_FILE}'" >/dev/null 2>&1 || true
+          fi
+
+          if [[ -f "$out_path" || -f "$results_path" ]]; then
+            echo "ERROR: Could not clean stale output files due to permissions:" >&2
+            ls -l "$out_path" "$results_path" 2>/dev/null || true
+            return 1
+          fi
+        }
+
+        cleanup_files
 
         if [[ "$PULL" == "true" ]]; then
           echo "Pulling ${IMAGE_REF}"
