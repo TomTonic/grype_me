@@ -162,7 +162,7 @@ GitHub gist file anchors are based on rendered DOM IDs (for example, `my_file.md
 | `output-file` | Save results to JSON file | – |
 | `only-fixed` | Only report vulnerabilities with fixes available | `false` |
 | `db-update` | Update DB before scanning (see [Performance](#performance)) | `false` |
-| `strict-privilege-drop` | Fail instead of root fallback if runtime mounts prevent safe UID/GID drop | `false` |
+| `strict-privilege-drop` | Fail instead of root fallback if `GITHUB_OUTPUT` cannot be pre-opened before UID/GID drop | `false` |
 | `description` | Optional free text (supports Markdown/line breaks) copied verbatim into report `.md` under `Description:` | – |
 
 ### Gist Integration
@@ -198,7 +198,7 @@ GitHub gist file anchors are based on rendered DOM IDs (for example, `my_file.md
 
 ### Privilege drop troubleshooting
 
-In some runner/container setups, mounted GitHub file-command paths (especially `GITHUB_OUTPUT`) cannot be re-owned for UID/GID `10001`. In that case the action either:
+The container starts as root and pre-opens `GITHUB_OUTPUT` before dropping to UID 10001.  The inherited file descriptor remains valid after `setuid`/`setgid` (standard Unix behavior), so step outputs can be written without modifying mount ownership.  If the pre-open fails, the action either:
 
 - falls back to root (default, `strict-privilege-drop: false`) and reports `runtime-privilege=root-fallback`
 - fails fast (`strict-privilege-drop: true`)

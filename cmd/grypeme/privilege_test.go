@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -14,8 +15,13 @@ func resetPrivilegeFns() {
 	setgidFn = func(int) error { return nil }
 	setuidFn = func(int) error { return nil }
 	getenvFn = os.Getenv
+	openFileFn = os.OpenFile
 	runtimePrivilegeMode = "unknown"
 	runtimePrivilegeDetail = ""
+	if preopenedGitHubOutput != nil {
+		_ = preopenedGitHubOutput.Close()
+	}
+	preopenedGitHubOutput = nil
 }
 
 func TestDropPrivilegesNonRootNoop(t *testing.T) {
@@ -116,7 +122,7 @@ func TestDropPrivilegesSuccessPath(t *testing.T) {
 	}
 }
 
-func TestDropPrivilegesSkipsWhenGitHubOutputCannotBePrepared(t *testing.T) {
+func TestDropPrivilegesFallsBackWhenGitHubOutputCannotBePreOpened(t *testing.T) {
 	defer resetPrivilegeFns()
 
 	uid := 0
@@ -132,17 +138,8 @@ func TestDropPrivilegesSkipsWhenGitHubOutputCannotBePrepared(t *testing.T) {
 		}
 		return ""
 	}
-	statFn = func(path string) (os.FileInfo, error) {
-		if path == "/github/file_commands" || path == "/github/file_commands/set_output_test" || path == "/github/workspace" {
-			return nil, nil
-		}
-		return nil, errors.New("not found")
-	}
-	chownFn = func(path string, uid int, gid int) error {
-		if path == "/github/file_commands/set_output_test" {
-			return errors.New("operation not permitted")
-		}
-		return nil
+	openFileFn = func(string, int, os.FileMode) (*os.File, error) {
+		return nil, errors.New("permission denied")
 	}
 	setgidFn = func(int) error {
 		calledSetgid = true
@@ -158,7 +155,7 @@ func TestDropPrivilegesSkipsWhenGitHubOutputCannotBePrepared(t *testing.T) {
 	}
 
 	if calledSetgid || calledSetuid {
-		t.Fatalf("dropPrivileges() should skip setgid/setuid when GITHUB_OUTPUT cannot be prepared")
+		t.Fatalf("dropPrivileges() should skip setgid/setuid when GITHUB_OUTPUT cannot be pre-opened")
 	}
 	if uid != 0 || euid != 0 {
 		t.Fatalf("expected to remain root, got uid=%d euid=%d", uid, euid)
@@ -170,31 +167,33 @@ func TestDropPrivilegesSkipsWhenGitHubOutputCannotBePrepared(t *testing.T) {
 	}
 }
 
-func TestDropPrivilegesPreparesGitHubOutputAndDrops(t *testing.T) {
+func TestDropPrivilegesPreOpensGitHubOutputAndDrops(t *testing.T) {
 	defer resetPrivilegeFns()
 
 	uid := 0
 	euid := 0
 	calledSetgid := false
 	calledSetuid := false
-	chowned := map[string]bool{}
+	outputPath := filepath.Join(t.TempDir(), "gh_output.txt")
 
 	getUID = func() int { return uid }
 	getEUID = func() int { return euid }
 	getenvFn = func(key string) string {
 		if key == "GITHUB_OUTPUT" {
-			return "/github/file_commands/set_output_test"
+			return outputPath
 		}
 		return ""
 	}
-	statFn = func(path string) (os.FileInfo, error) {
-		if path == "/github/file_commands" || path == "/github/file_commands/set_output_test" || path == "/github/workspace" {
-			return nil, nil
-		}
+	statFn = func(string) (os.FileInfo, error) {
 		return nil, errors.New("not found")
 	}
-	chownFn = func(path string, uid int, gid int) error {
-		chowned[path] = true
+	openFileFn = func(path string, flag int, mode os.FileMode) (*os.File, error) {
+		if path != outputPath {
+			return nil, errors.New("unexpected path")
+		}
+		return os.OpenFile(path, flag, mode)
+	}
+	chownFn = func(string, int, int) error {
 		return nil
 	}
 	setgidFn = func(int) error {
@@ -215,8 +214,8 @@ func TestDropPrivilegesPreparesGitHubOutputAndDrops(t *testing.T) {
 	if !calledSetgid || !calledSetuid {
 		t.Fatalf("dropPrivileges() should call setgid/setuid when output paths are prepared")
 	}
-	if !chowned["/github/file_commands"] || !chowned["/github/file_commands/set_output_test"] {
-		t.Fatalf("expected chown on GITHUB_OUTPUT dir and file, got: %#v", chowned)
+	if preopenedGitHubOutput == nil {
+		t.Fatalf("expected preopened GITHUB_OUTPUT handle")
 	}
 
 	mode, detail := getRuntimePrivilegeInfo()
@@ -240,14 +239,8 @@ func TestDropPrivilegesStrictModeFailsOnOutputPrepError(t *testing.T) {
 			return ""
 		}
 	}
-	statFn = func(path string) (os.FileInfo, error) {
-		if path == "/github/file_commands" || path == "/github/file_commands/set_output_test" {
-			return nil, nil
-		}
-		return nil, errors.New("not found")
-	}
-	chownFn = func(string, int, int) error {
-		return errors.New("operation not permitted")
+	openFileFn = func(string, int, os.FileMode) (*os.File, error) {
+		return nil, errors.New("operation not permitted")
 	}
 
 	err := dropPrivileges()

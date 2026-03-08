@@ -90,9 +90,9 @@ inputs:
   strict-privilege-drop:
     description: >-
       Enforce non-root execution strictly. If true, the action fails when
-      runtime mounts (for example GITHUB_OUTPUT file command paths) cannot be
-      re-owned for UID/GID 10001. If false, the action falls back to root with
-      a warning to preserve workflow reliability.
+      GITHUB_OUTPUT cannot be pre-opened before dropping to UID/GID 10001.
+      If false (default), the action falls back to root with a warning to
+      preserve workflow reliability.
     required: false
     default: 'false'
   description:
@@ -165,8 +165,8 @@ outputs:
   runtime-privilege-detail:
     description: >-
       Diagnostic detail for runtime privilege handling.
-      Non-empty when strict privilege drop cannot be honored because mounted
-      GitHub file-command paths cannot be re-owned.
+      Non-empty when privilege drop cannot be performed because
+      GITHUB_OUTPUT cannot be pre-opened before dropping privileges.
 
 runs:
   using: 'docker'
