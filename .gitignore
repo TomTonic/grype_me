@@ -7,9 +7,9 @@
 *.dll
 *.so
 *.dylib
-grype-action
-grype_me
-grypeme
+/grype-action
+/grype_me
+/grypeme
 bin/
 
 # Test binary, built with `go test -c`
@@ -36,6 +36,6 @@ go.work.sum
 
 # Editor/IDE
 # .idea/
-# .vscode/
+.vscode/
 
 .DS_Store

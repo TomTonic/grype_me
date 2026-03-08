@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"io"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -103,6 +107,7 @@ func TestIsDebugEnabled(t *testing.T) {
 func TestLoadConfig(t *testing.T) {
 	t.Setenv("INPUT_SCAN", "latest_release")
 	t.Setenv("INPUT_IMAGE", "")
+	t.Setenv("INPUT_IMAGE-SOURCE", "registry")
 	t.Setenv("INPUT_PATH", "")
 	t.Setenv("INPUT_SBOM", "")
 	t.Setenv("INPUT_FAIL-BUILD", "true")
@@ -128,6 +133,9 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if !config.OnlyFixed {
 		t.Error("config.OnlyFixed should be true")
+	}
+	if config.ImageSource != "registry" {
+		t.Errorf("config.ImageSource = %v, want registry", config.ImageSource)
 	}
 	if config.Description != "Nightly scan of release artifact" {
 		t.Errorf("config.Description = %v, want Nightly scan of release artifact", config.Description)
@@ -166,4 +174,64 @@ func TestDetermineScanMode(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRedactEnvVar(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"gist token", "INPUT_GIST-TOKEN=abc123", "INPUT_GIST-TOKEN=***REDACTED***"},
+		{"generic token", "GITHUB_TOKEN=abc123", "GITHUB_TOKEN=***REDACTED***"},
+		{"normal var", "INPUT_SCAN=latest_release", "INPUT_SCAN=latest_release"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := redactEnvVar(tt.in)
+			if got != tt.want {
+				t.Errorf("redactEnvVar() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrintDebugEnvRedactsSecrets(t *testing.T) {
+	t.Setenv("INPUT_DEBUG", "true")
+	t.Setenv("INPUT_GIST-TOKEN", "super-secret")
+
+	output := captureStdout(t, printDebugEnv)
+	if strings.Contains(output, "super-secret") {
+		t.Fatalf("printDebugEnv leaked sensitive value: %q", output)
+	}
+	if !strings.Contains(output, "INPUT_GIST-TOKEN=***REDACTED***") {
+		t.Fatalf("printDebugEnv did not redact token output: %q", output)
+	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create stdout pipe: %v", err)
+	}
+
+	os.Stdout = w
+	defer func() { os.Stdout = orig }()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close stdout writer: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("failed to read captured stdout: %v", err)
+	}
+
+	return buf.String()
 }

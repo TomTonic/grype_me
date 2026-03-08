@@ -60,6 +60,7 @@ jobs:
         uses: TomTonic/grype_me@f322b38c1b41f11283aa5d2281e01a59c9537226 # v1 # don't pin, rolling tag changes daily
         with:
           image: ghcr.io/tomtonic/grype_me:latest
+          image-source: registry
           description: |
             Automated nightly scan of the published Docker image `ghcr.io/tomtonic/grype_me:latest`.
             This report powers the "Vulnerabilities of Docker Image" badge in README.
