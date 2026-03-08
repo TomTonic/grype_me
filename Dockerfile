@@ -17,8 +17,10 @@ COPY cmd/ ./cmd/
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o grype-action ./cmd/grypeme
 
 # Prepare runtime directory skeleton for scratch image.
-RUN mkdir -p /opt/runtime/home/grype/.cache/grype /opt/runtime/home/grype/tmp /opt/runtime/github/workspace && \
-    touch /opt/runtime/home/grype/.keep /opt/runtime/home/grype/tmp/.keep /opt/runtime/github/workspace/.keep
+# Scratch has no shell or mkdir, so directories must be created in a build
+# stage and COPYed into the final image with the desired ownership.
+RUN mkdir -p /opt/runtime/app/.cache/grype /opt/runtime/app/tmp /opt/runtime/github/workspace && \
+    touch /opt/runtime/app/.keep /opt/runtime/app/tmp/.keep /opt/runtime/github/workspace/.keep
 
 # Installer stage: fetch grype with signature verification.
 # Kept on Alpine intentionally:
@@ -32,6 +34,8 @@ FROM alpine:3.23@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f21
 
 ARG GRYPE_CACHEBUST
 
+# ca-certificates: installs the latest Mozilla CA bundle from the Alpine
+# package repo.  Since the image is rebuilt daily the trust store stays fresh.
 RUN apk add --no-cache ca-certificates curl bash cosign
 
 RUN echo "$GRYPE_CACHEBUST" >/dev/null && \
@@ -50,19 +54,20 @@ FROM scratch
 COPY --from=grype-installer /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # Create runtime paths with explicit ownership for the non-privileged user.
-COPY --from=builder --chown=10001:10001 /opt/runtime/home/grype /home/grype
+# /app is the application home (no actual OS user exists in scratch).
+COPY --from=builder --chown=10001:10001 /opt/runtime/app /app
 COPY --from=builder --chown=10001:10001 /opt/runtime/github/workspace /github/workspace
 
 # Copy verified grype binary from installer stage
 COPY --from=grype-installer /tmp/grype/grype /usr/local/bin/grype
 
 # Copy pre-downloaded vulnerability database with proper ownership
-COPY --from=grype-installer --chown=10001:10001 /root/.cache/grype /home/grype/.cache/grype
+COPY --from=grype-installer --chown=10001:10001 /root/.cache/grype /app/.cache/grype
 
 # Ensure Grype uses the baked-in DB and TLS trust store in scratch runtime.
-ENV HOME=/home/grype
-ENV GRYPE_DB_CACHE_DIR=/home/grype/.cache/grype/db
-ENV TMPDIR=/home/grype/tmp
+ENV HOME=/app
+ENV GRYPE_DB_CACHE_DIR=/app/.cache/grype/db
+ENV TMPDIR=/app/tmp
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 # Copy the built application

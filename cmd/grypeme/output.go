@@ -22,11 +22,13 @@ func setOutputs(stats VulnerabilityStats, output *GrypeOutput, jsonPath, scanMod
 		return nil
 	}
 
-	outputFile, err := os.OpenFile(githubOutput, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	outputFile, isSharedHandle, err := getGitHubOutputWriter(githubOutput)
 	if err != nil {
 		return fmt.Errorf("failed to open GITHUB_OUTPUT: %w", err)
 	}
-	defer func() { _ = outputFile.Close() }()
+	if !isSharedHandle {
+		defer func() { _ = outputFile.Close() }()
+	}
 
 	// Use gist endpoint badge URL when available, otherwise fall back to static URL
 	badgeURL := gistBadgeURL
