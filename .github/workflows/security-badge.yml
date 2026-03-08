@@ -44,11 +44,11 @@ jobs:
 
       - name: Scan latest release of GitHub Action
         id: grype_me_release
-        uses: TomTonic/grype_me@85539957464f97caec876aa39555f83944bc163e # v1 # don't pin, rolling tag changes daily
+        uses: TomTonic/grype_me@v1
         with:
           scan: 'latest_release'
           description: |
-            Automated nightly scan of the latest stable release tag of this repository.
+            Automated nightly scan of the latest stable release tag of this action's code.
             This report powers the "Vulnerabilities of Action" badge in README.
           fail-build: false
           gist-token: ${{ secrets.GIST_TOKEN }}
@@ -57,13 +57,15 @@ jobs:
 
       - name: Scan nightly Docker image
         id: grype_me_image
-        uses: TomTonic/grype_me@85539957464f97caec876aa39555f83944bc163e # v1 # don't pin, rolling tag changes daily
+        uses: TomTonic/grype_me@v1
         with:
           image: ghcr.io/tomtonic/grype_me:latest
           image-source: registry
           description: |
-            Automated nightly scan of the published Docker image `ghcr.io/tomtonic/grype_me:latest`.
-            This report powers the "Vulnerabilities of Docker Image" badge in README.
+            Automated nightly scan of the daily published Docker image
+            `ghcr.io/tomtonic/grype_me:latest`. This image is used by this
+            action to actually scan your artifacts. This report powers the
+            "Vulnerabilities of DockerImage" badge in README.
           fail-build: false
           gist-token: ${{ secrets.GIST_TOKEN }}
           gist-id: ${{ vars.GRYPE_BADGE_GIST_ID }}
