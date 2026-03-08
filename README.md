@@ -112,12 +112,15 @@ This writes three files to the gist:
 - uses: TomTonic/grype_me@v1
   with:
     image: 'myapp:${{ github.sha }}'
+    image-source: 'registry'
     description: |
       PR build image scan for commit `${{ github.sha }}`.
       Used as release gate for container publishing.
     fail-build: true
     severity-cutoff: 'high'
 ```
+
+`image-source: registry` pulls directly from a registry and avoids Docker daemon access.
 
 ### Using the Badge in Your README
 
@@ -146,6 +149,7 @@ GitHub gist file anchors are based on rendered DOM IDs (for example, `my_file.md
 |-------|-------------|---------|
 | `scan` | Repository scan: `latest_release`, `head`, or a tag/branch | `latest_release` |
 | `image` | Container image to scan (e.g., `alpine:latest`) | – |
+| `image-source` | Source for `image` scans: `auto`, `registry`, `docker`, `podman`, `containerd` | `auto` |
 | `path` | Directory or file to scan | – |
 | `sbom` | SBOM file (Syft, CycloneDX, SPDX) | – |
 

@@ -4,73 +4,161 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
+	"sort"
+	"strconv"
 	"strings"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
 )
-
-// configureGitSafeDirectory adds the current working directory to Git's safe.directory config.
-// This is necessary when running in a Docker container where the workspace may be owned
-// by a different user than the Git process.
-func configureGitSafeDirectory() error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
-	}
-
-	// Add current directory to safe.directory
-	cmd := exec.Command("git", "config", "--global", "--add", "safe.directory", cwd)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to configure git safe.directory: %w", err)
-	}
-
-	// Also add GITHUB_WORKSPACE if in GitHub Actions Docker environment
-	if workspace := os.Getenv("GITHUB_WORKSPACE"); workspace != "" && workspace != cwd {
-		cmd = exec.Command("git", "config", "--global", "--add", "safe.directory", workspace)
-		_ = cmd.Run() // Non-fatal if this fails
-	}
-
-	return nil
-}
 
 // getLatestReleaseTag returns the latest stable release tag from the repository.
 // Tags are sorted by semantic version (descending), and pre-release tags are excluded
 // unless all tags are pre-releases.
 func getLatestReleaseTag() (string, error) {
-	if _, err := exec.LookPath("git"); err != nil {
-		return "", fmt.Errorf("git not found: %w", err)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	repo, err := git.PlainOpenWithOptions(cwd, &git.PlainOpenOptions{
+		DetectDotGit:          true,
+		EnableDotGitCommonDir: true,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to open git repository: %w", err)
 	}
 
 	// Fetch all tags to ensure we have the latest
 	fmt.Println("Fetching tags...")
-	fetchCmd := exec.Command("git", "fetch", "--tags", "--force")
-	fetchCmd.Stdout = os.Stdout
-	fetchCmd.Stderr = os.Stderr
-	if err := fetchCmd.Run(); err != nil {
+	err = repo.Fetch(&git.FetchOptions{
+		RefSpecs: []config.RefSpec{"refs/tags/*:refs/tags/*"},
+		Force:    true,
+		Tags:     git.AllTags,
+	})
+	if err != nil && err != git.NoErrAlreadyUpToDate {
 		fmt.Printf("Warning: Could not fetch tags: %v\n", err)
 	}
 
-	// Get all tags sorted by version (descending)
-	listCmd := exec.Command("git", "tag", "--sort=-v:refname")
-	output, err := listCmd.Output()
+	// Get all tags
+	tagRefs, err := repo.Tags()
 	if err != nil {
 		return "", fmt.Errorf("failed to list tags: %w", err)
 	}
 
-	tags := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(tags) == 0 || tags[0] == "" {
+	var tagNames []string
+	err = tagRefs.ForEach(func(ref *plumbing.Reference) error {
+		tagNames = append(tagNames, ref.Name().Short())
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to iterate tags: %w", err)
+	}
+
+	if len(tagNames) == 0 {
 		return "", fmt.Errorf("no release tags found in repository. Use 'scan: head' to scan the current checkout, or create a semver tag (e.g., v1.0.0)")
 	}
 
+	// Sort tags by semver-aware order (descending), then lexical fallback.
+	sort.Slice(tagNames, func(i, j int) bool {
+		return compareTagsDesc(tagNames[i], tagNames[j]) < 0
+	})
+
 	// Find the first stable (non-pre-release) tag
-	for _, tag := range tags {
+	for _, tag := range tagNames {
 		if !isPreReleaseTag(tag) {
 			return tag, nil
 		}
 	}
 
 	// If all tags are pre-release, use the highest one with a warning
-	fmt.Printf("Warning: All tags appear to be pre-release. Using: %s\n", tags[0])
-	return tags[0], nil
+	fmt.Printf("Warning: All tags appear to be pre-release. Using: %s\n", tagNames[0])
+	return tagNames[0], nil
+}
+
+// compareTagsDesc compares two tags for descending sort order.
+// Returns <0 when a should come before b, >0 when b before a, 0 when equal.
+func compareTagsDesc(a, b string) int {
+	av, aok := parseTagVersion(a)
+	bv, bok := parseTagVersion(b)
+
+	if aok && bok {
+		if av.major != bv.major {
+			return bv.major - av.major
+		}
+		if av.minor != bv.minor {
+			return bv.minor - av.minor
+		}
+		if av.patch != bv.patch {
+			return bv.patch - av.patch
+		}
+		// Stable releases sort before pre-releases.
+		if av.pre == "" && bv.pre != "" {
+			return -1
+		}
+		if av.pre != "" && bv.pre == "" {
+			return 1
+		}
+		if av.pre != bv.pre {
+			if av.pre > bv.pre {
+				return -1
+			}
+			return 1
+		}
+		return 0
+	}
+
+	if aok && !bok {
+		return -1
+	}
+	if !aok && bok {
+		return 1
+	}
+
+	if a > b {
+		return -1
+	}
+	if a < b {
+		return 1
+	}
+	return 0
+}
+
+type tagVersion struct {
+	major int
+	minor int
+	patch int
+	pre   string
+}
+
+func parseTagVersion(tag string) (tagVersion, bool) {
+	normalized := strings.TrimPrefix(strings.TrimPrefix(tag, "v"), "V")
+	parts := strings.SplitN(normalized, "-", 2)
+	core := parts[0]
+	pre := ""
+	if len(parts) == 2 {
+		pre = parts[1]
+	}
+
+	nums := strings.Split(core, ".")
+	if len(nums) == 0 || len(nums) > 3 {
+		return tagVersion{}, false
+	}
+
+	values := []int{0, 0, 0}
+	for i := 0; i < len(nums); i++ {
+		if nums[i] == "" {
+			return tagVersion{}, false
+		}
+		n, err := strconv.Atoi(nums[i])
+		if err != nil {
+			return tagVersion{}, false
+		}
+		values[i] = n
+	}
+
+	return tagVersion{major: values[0], minor: values[1], patch: values[2], pre: pre}, true
 }
 
 // isPreReleaseTag checks if a tag follows pre-release versioning conventions.
@@ -136,6 +224,16 @@ func checkoutToWorktree(ref string) (string, error) {
 		return "", fmt.Errorf("invalid ref %q: %w", ref, err)
 	}
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	repo, err := git.PlainOpen(cwd)
+	if err != nil {
+		return "", fmt.Errorf("failed to open git repository: %w", err)
+	}
+
 	// Create a temporary directory for the worktree
 	tmpDir, err := os.MkdirTemp("", "grype-scan-*")
 	if err != nil {
@@ -144,14 +242,44 @@ func checkoutToWorktree(ref string) (string, error) {
 
 	fmt.Printf("Creating temporary worktree at %s for ref %s\n", tmpDir, ref)
 
-	// Add the worktree in detached HEAD mode
-	worktreeCmd := exec.Command("git", "worktree", "add", "--detach", tmpDir, ref)
-	worktreeCmd.Stdout = os.Stdout
-	worktreeCmd.Stderr = os.Stderr
-	if err := worktreeCmd.Run(); err != nil {
-		// Clean up temp dir on failure
+	// Resolve the ref to a hash
+	hash, err := repo.ResolveRevision(plumbing.Revision(ref))
+	if err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return "", fmt.Errorf("failed to resolve ref %q: %w", ref, err)
+	}
+
+	// Clone to temporary directory with specific commit
+	_, err = git.PlainClone(tmpDir, false, &git.CloneOptions{
+		URL:          cwd,
+		SingleBranch: true,
+		NoCheckout:   true,
+	})
+	if err != nil {
 		_ = os.RemoveAll(tmpDir)
 		return "", fmt.Errorf("failed to create worktree: %w", err)
+	}
+
+	// Checkout the specific commit in detached HEAD
+	tmpRepo, err := git.PlainOpen(tmpDir)
+	if err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return "", fmt.Errorf("failed to open worktree: %w", err)
+	}
+
+	w, err := tmpRepo.Worktree()
+	if err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return "", fmt.Errorf("failed to get worktree: %w", err)
+	}
+
+	err = w.Checkout(&git.CheckoutOptions{
+		Hash:  *hash,
+		Force: true,
+	})
+	if err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return "", fmt.Errorf("failed to checkout: %w", err)
 	}
 
 	return tmpDir, nil
@@ -166,13 +294,7 @@ func cleanupWorktree(worktreeDir string) {
 
 	fmt.Printf("Cleaning up temporary worktree at %s\n", worktreeDir)
 
-	// Remove the worktree from Git's tracking
-	removeCmd := exec.Command("git", "worktree", "remove", "--force", worktreeDir)
-	if err := removeCmd.Run(); err != nil {
-		fmt.Printf("Warning: git worktree remove failed: %v\n", err)
-	}
-
-	// Ensure the directory is removed even if git worktree remove failed
+	// Simply remove the directory (it's a standalone clone)
 	if err := os.RemoveAll(worktreeDir); err != nil {
 		fmt.Printf("Warning: failed to remove worktree directory: %v\n", err)
 	}
@@ -181,11 +303,6 @@ func cleanupWorktree(worktreeDir string) {
 // handleRepoScan handles repository-based scanning (latest_release, head, or specific ref).
 // Returns (target, tempDir, error) where tempDir is set if a temporary worktree was created.
 func handleRepoScan(scanMode string) (string, string, error) {
-	// Configure Git safe directories for Docker container environment
-	if err := configureGitSafeDirectory(); err != nil {
-		fmt.Printf("Warning: %v\n", err)
-	}
-
 	fmt.Printf("Repository scan mode: %s\n", scanMode)
 
 	switch strings.ToLower(scanMode) {

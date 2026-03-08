@@ -23,6 +23,7 @@ func TestDetermineScanTarget(t *testing.T) {
 		errMsg     string
 	}{
 		{"image mode", Config{Image: "alpine:latest"}, "alpine:latest", false, ""},
+		{"image mode invalid source", Config{Image: "alpine:latest", ImageSource: "invalid"}, "", true, "invalid image-source"},
 		{"path mode directory", Config{Path: tmpDir}, "dir:", false, ""},
 		{"path mode file", Config{Path: tmpFile}, "file:", false, ""},
 		{"sbom mode", Config{SBOM: "sbom.json"}, "sbom:", false, ""},
