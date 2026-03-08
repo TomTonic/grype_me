@@ -87,6 +87,14 @@ inputs:
       Warning: may expose sensitive data in logs.
     required: false
     default: 'false'
+  strict-privilege-drop:
+    description: >-
+      Enforce non-root execution strictly. If true, the action fails when
+      runtime mounts (for example GITHUB_OUTPUT file command paths) cannot be
+      re-owned for UID/GID 10001. If false, the action falls back to root with
+      a warning to preserve workflow reliability.
+    required: false
+    default: 'false'
   description:
     description: >-
       Optional free-text description of what was scanned.
@@ -150,6 +158,15 @@ outputs:
       Only set when gist-token and gist-id are configured.
       Can be used as the badge link target so clicking the badge
       opens the full vulnerability report.
+  runtime-privilege:
+    description: >-
+      Runtime privilege mode used by the container.
+      Values: already-non-root, dropped, or root-fallback.
+  runtime-privilege-detail:
+    description: >-
+      Diagnostic detail for runtime privilege handling.
+      Non-empty when strict privilege drop cannot be honored because mounted
+      GitHub file-command paths cannot be re-owned.
 
 runs:
   using: 'docker'
