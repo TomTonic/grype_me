@@ -1,6 +1,6 @@
 ARG GRYPE_CACHEBUST=0
 
-FROM golang:1.26.1-bookworm AS builder
+FROM golang:1.26.1-bookworm@sha256:c7a82e9e2df2fea5d8cb62a16aa6f796d2b2ed81ccad4ddd2bc9f0d22936c3f2 AS builder
 
 # Builder uses only Go toolchain and module downloads; no extra OS packages needed.
 
