@@ -41,6 +41,10 @@ inputs:
     description: Value for INPUT_DEBUG
     required: false
     default: 'false'
+  strict-privilege-drop:
+    description: Value for INPUT_STRICT-PRIVILEGE-DROP
+    required: false
+    default: 'false'
   outputs-file:
     description: Host-side filename for container to write GITHUB_OUTPUT into
     required: false
@@ -87,7 +91,8 @@ runs:
               -v "$GITHUB_WORKSPACE:/github/workspace" \
               --entrypoint /bin/sh \
               alpine:3.23 \
-              -c "rm -f '/github/workspace/${HOST_OUT_FILE}' '/github/workspace/${RESULTS_FILE}'" >/dev/null 2>&1 || true
+              -c "rm -f '/github/workspace/${HOST_OUT_FILE}' '/github/workspace/${RESULTS_FILE}'" \
+              >/dev/null 2>&1 || true
           fi
 
           if [[ -f "$out_path" || -f "$results_path" ]]; then
@@ -118,6 +123,7 @@ runs:
           -e INPUT_ONLY-FIXED='${{ inputs.only-fixed }}' \
           -e INPUT_DB-UPDATE='${{ inputs.db-update }}' \
           -e INPUT_DEBUG='${{ inputs.debug }}' \
+          -e INPUT_STRICT-PRIVILEGE-DROP='${{ inputs.strict-privilege-drop }}' \
           "${IMAGE_REF}"
 
         if [[ ! -f "$GITHUB_WORKSPACE/$HOST_OUT_FILE" ]]; then

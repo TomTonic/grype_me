@@ -52,6 +52,65 @@ jobs:
           debug: 'false'
           outputs-file: github_output_ci.txt
 
+      - name: Privilege mode smoke test (default mode)
+        id: privilege-default
+        uses: ./.github/actions/run-grype-me-container
+        with:
+          image-ref: grype_me:local-test
+          pull: 'false'
+          scan: head
+          output-file: grype-results-priv-default.json
+          variable-prefix: GRYPE_PRIV_DEFAULT_
+          fail-build: 'false'
+          severity-cutoff: medium
+          only-fixed: 'false'
+          db-update: 'false'
+          debug: 'false'
+          strict-privilege-drop: 'false'
+          outputs-file: github_output_priv_default.txt
+
+      - name: Assert privilege output (default mode)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mode='${{ steps.privilege-default.outputs.runtime-privilege }}'
+          if [[ -z "$mode" ]]; then
+            echo "runtime-privilege output is missing in default mode" >&2
+            exit 1
+          fi
+          if [[ "$mode" != "dropped" && "$mode" != "already-non-root" && "$mode" != "root-fallback" ]]; then
+            echo "Unexpected runtime-privilege value: $mode" >&2
+            exit 1
+          fi
+
+      - name: Privilege mode smoke test (strict mode)
+        id: privilege-strict
+        uses: ./.github/actions/run-grype-me-container
+        with:
+          image-ref: grype_me:local-test
+          pull: 'false'
+          scan: head
+          output-file: grype-results-priv-strict.json
+          variable-prefix: GRYPE_PRIV_STRICT_
+          fail-build: 'false'
+          severity-cutoff: medium
+          only-fixed: 'false'
+          db-update: 'false'
+          debug: 'false'
+          strict-privilege-drop: 'true'
+          outputs-file: github_output_priv_strict.txt
+
+      - name: Assert privilege output (strict mode)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mode='${{ steps.privilege-strict.outputs.runtime-privilege }}'
+          if [[ "$mode" != "dropped" && "$mode" != "already-non-root" ]]; then
+            echo "Strict mode requires non-root runtime, got: $mode" >&2
+            echo "Detail: ${{ steps.privilege-strict.outputs.runtime-privilege-detail }}" >&2
+            exit 1
+          fi
+
       - name: Results preview
         run: head -50 grype-results.json || true
 

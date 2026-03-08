@@ -46,6 +46,14 @@ func setOutputs(stats VulnerabilityStats, output *GrypeOutput, jsonPath, scanMod
 		"badge-url":     badgeURL,
 	}
 
+	privilegeMode, privilegeDetail := getRuntimePrivilegeInfo()
+	if privilegeMode != "" {
+		outputs["runtime-privilege"] = privilegeMode
+	}
+	if privilegeDetail != "" {
+		outputs["runtime-privilege-detail"] = privilegeDetail
+	}
+
 	if jsonPath != "" {
 		outputs["json-output"] = jsonPath
 	}

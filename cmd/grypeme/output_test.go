@@ -8,6 +8,65 @@ import (
 	"time"
 )
 
+func TestSetOutputsIncludesRuntimePrivilegeInfo(t *testing.T) {
+	outFile := filepath.Join(t.TempDir(), "github_output.txt")
+	t.Setenv("GITHUB_OUTPUT", outFile)
+
+	runtimePrivilegeMode = "root-fallback"
+	runtimePrivilegeDetail = "cannot chown /github/file_commands/set_output_x"
+	t.Cleanup(func() {
+		runtimePrivilegeMode = "unknown"
+		runtimePrivilegeDetail = ""
+	})
+
+	output := &GrypeOutput{}
+	output.Descriptor.Version = "0.106.0"
+	output.Descriptor.DB.Status.Built = "2026-03-08T08:00:00Z"
+
+	err := setOutputs(
+		VulnerabilityStats{Total: 1, High: 1},
+		output,
+		"",
+		"release",
+		"https://gist.github.com/user/id#file-report-md",
+		"https://img.shields.io/endpoint?url=https://example.invalid/badge.json",
+	)
+	if err != nil {
+		t.Fatalf("setOutputs() error = %v", err)
+	}
+
+	content, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	text := string(content)
+
+	checks := []string{
+		"runtime-privilege=root-fallback",
+		"runtime-privilege-detail=cannot chown /github/file_commands/set_output_x",
+		"grype-version=0.106.0",
+		"report-url=https://gist.github.com/user/id#file-report-md",
+	}
+	for _, want := range checks {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected output to contain %q, got:\n%s", want, text)
+		}
+	}
+}
+
+func TestSetOutputsWithoutGithubOutputIsNonFatal(t *testing.T) {
+	t.Setenv("GITHUB_OUTPUT", "")
+
+	output := &GrypeOutput{}
+	output.Descriptor.Version = "0.106.0"
+	output.Descriptor.DB.Status.Built = "2026-03-08T08:00:00Z"
+
+	err := setOutputs(VulnerabilityStats{}, output, "", "head", "", "")
+	if err != nil {
+		t.Fatalf("setOutputs() should be non-fatal without GITHUB_OUTPUT, got %v", err)
+	}
+}
+
 func TestCopyOutputFile(t *testing.T) {
 	srcDir := t.TempDir()
 	srcFile := filepath.Join(srcDir, "source.json")

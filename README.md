@@ -162,6 +162,7 @@ GitHub gist file anchors are based on rendered DOM IDs (for example, `my_file.md
 | `output-file` | Save results to JSON file | – |
 | `only-fixed` | Only report vulnerabilities with fixes available | `false` |
 | `db-update` | Update DB before scanning (see [Performance](#performance)) | `false` |
+| `strict-privilege-drop` | Fail instead of root fallback if runtime mounts prevent safe UID/GID drop | `false` |
 | `description` | Optional free text (supports Markdown/line breaks) copied verbatim into report `.md` under `Description:` | – |
 
 ### Gist Integration
@@ -192,6 +193,17 @@ GitHub gist file anchors are based on rendered DOM IDs (for example, `my_file.md
 | `json-output` | Path to output file (if `output-file` set) |
 | `badge-url` | shields.io badge URL (dynamic endpoint when gist configured, static otherwise) |
 | `report-url` | URL to the rendered gist report section (`gist.github.com/...#file-...`; underscores are preserved) |
+| `runtime-privilege` | Effective privilege mode: `already-non-root`, `dropped`, or `root-fallback` |
+| `runtime-privilege-detail` | Diagnostic reason for fallback/strict failures when privilege drop cannot be honored |
+
+### Privilege drop troubleshooting
+
+In some runner/container setups, mounted GitHub file-command paths (especially `GITHUB_OUTPUT`) cannot be re-owned for UID/GID `10001`. In that case the action either:
+
+- falls back to root (default, `strict-privilege-drop: false`) and reports `runtime-privilege=root-fallback`
+- fails fast (`strict-privilege-drop: true`)
+
+Use the `runtime-privilege` and `runtime-privilege-detail` outputs plus warning logs to detect this condition.
 
 ## Performance
 

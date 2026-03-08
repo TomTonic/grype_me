@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   update-badge:
@@ -41,6 +42,77 @@ jobs:
           fetch-depth: 0
           # fetch-tags: true (non-default) - need tags to detect latest_release for the badge
           fetch-tags: true
+
+      # Optional diagnostic step: warns when the moving action tag (@v1) and the
+      # currently published GHCR image behind v1 appear to drift in semantic version.
+      - name: Check action/container coherence for moving tag v1 (warning only)
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            try {
+              const ownerInfo = await github.rest.users.getByUsername({ username: context.repo.owner });
+              const ownerType = ownerInfo.data.type || 'User';
+
+              const latestRelease = await github.rest.repos.getLatestRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+
+              const latestActionVersion = String(latestRelease.data.tag_name || '')
+                .replace(/^v/, '')
+                .replace(/-release$/, '');
+
+              const listParams = {
+                package_type: 'container',
+                package_name: context.repo.repo,
+                per_page: 100,
+              };
+
+              let versions = [];
+              if (ownerType === 'Organization') {
+                listParams.org = context.repo.owner;
+                versions = await github.paginate(
+                  github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
+                  listParams
+                );
+              } else {
+                listParams.username = context.repo.owner;
+                versions = await github.paginate(
+                  github.rest.packages.getAllPackageVersionsForPackageOwnedByUser,
+                  listParams
+                );
+              }
+
+              const v1Version = versions.find((version) =>
+                (version.metadata?.container?.tags || []).includes('v1')
+              );
+              if (!v1Version) {
+                core.warning('Could not find GHCR package version carrying moving tag v1.');
+                return;
+              }
+
+              const tags = v1Version.metadata?.container?.tags || [];
+              const semverTag = tags.find((tag) => /^v\d+\.\d+\.\d+$/.test(tag));
+              if (!semverTag) {
+                core.warning(`Could not infer action semver from v1 package tags: ${tags.join(', ')}`);
+                return;
+              }
+
+              const v1ActionVersion = semverTag.replace(/^v/, '');
+              core.info(`Latest action release: ${latestActionVersion}`);
+              core.info(`Container behind moving tag v1 appears to be: ${v1ActionVersion}`);
+
+              if (latestActionVersion !== v1ActionVersion) {
+                core.warning([
+                  `Version drift detected: action release is ${latestActionVersion},`,
+                  `but GHCR moving tag v1 points to ${v1ActionVersion}.`,
+                  'Users of TomTonic/grype_me@v1 may run an image that does not match the latest action metadata.',
+                  'Update plugin references or republish/move tags so metadata and container are aligned.'
+                ].join(' '));
+              }
+            } catch (error) {
+              core.warning(`Could not complete action/container coherence check: ${error.message}`);
+            }
 
       - name: Scan latest release of GitHub Action
         id: grype_me_release
