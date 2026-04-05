@@ -2,7 +2,7 @@ module github.com/TomTonic/grype_me
 
 go 1.26.1
 
-require github.com/go-git/go-git/v5 v5.17.0
+require github.com/go-git/go-git/v5 v5.17.2
 
 require (
 	dario.cat/mergo v1.0.2 // indirect
