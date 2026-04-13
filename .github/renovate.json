@@ -14,6 +14,7 @@
       "description": "Auto-update rolling TomTonic/grype_me action (nightly rebuild around 06:53 UTC)",
       "matchManagers": ["github-actions"],
       "matchPackageNames": ["TomTonic/grype_me"],
+      "groupName": "github-actions-grype_me-only",
       "schedule": ["after 07:15 and before 07:55"],
       "automerge": true,
       "automergeType": "branch",
@@ -21,8 +22,9 @@
       "rebaseWhen": "behind-base-branch"
     },
     {
-      "description": "Group routine GitHub Actions bumps",
+      "description": "Group routine GitHub Actions bumps (excluding TomTonic/grype_me)",
       "matchManagers": ["github-actions"],
+      "excludePackageNames": ["TomTonic/grype_me"],
       "groupName": "github-actions"
     },
     {
