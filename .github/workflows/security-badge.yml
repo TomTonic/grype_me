@@ -46,7 +46,7 @@ jobs:
       # Optional diagnostic step: warns when the moving action tag (@v1) and the
       # currently published GHCR image behind v1 appear to drift in semantic version.
       - name: Check action/container coherence for moving tag v1 (warning only)
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             try {
