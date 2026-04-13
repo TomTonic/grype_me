@@ -40,6 +40,21 @@
       "matchManagers": ["pip_requirements"],
       "matchFileNames": [".github/workflows/yamllint-requirements.txt"],
       "groupName": "python-lint"
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchDepNames": ["go"],
+      "matchDepTypes": ["golang"],
+      "rangeStrategy": "bump"
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["indirect"],
+      "enabled": true
+    },  
+    {
+      "matchManagers": ["gomod"],
+      "postUpdateOptions": ["gomodTidy"]
     }
   ],
   "prConcurrentLimit": 8,
