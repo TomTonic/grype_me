@@ -24,8 +24,10 @@
     {
       "description": "Group routine GitHub Actions bumps (excluding TomTonic/grype_me)",
       "matchManagers": ["github-actions"],
-      "excludePackageNames": ["TomTonic/grype_me"],
-      "groupName": "github-actions"
+      "groupName": "github-actions",
+      "matchPackageNames": [
+        "!TomTonic/grype_me"
+      ]
     },
     {
       "description": "Pin and update Docker base images with digests",
