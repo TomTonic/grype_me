@@ -30,7 +30,7 @@ RUN mkdir -p /opt/runtime/app/.cache/grype /opt/runtime/app/tmp /opt/runtime/git
 #
 # Using Bookworm here could reuse a Debian base layer, but cache reuse is mostly
 # a build-time performance optimization and does not improve runtime security.
-FROM alpine:3.23@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11 AS grype-installer
+FROM alpine:3.24@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4 AS grype-installer
 
 ARG GRYPE_CACHEBUST
 
