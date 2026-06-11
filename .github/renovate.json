@@ -1,62 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", "schedule:daily"],
-  "dependencyDashboard": true,
-  "enabledManagers": ["github-actions", "dockerfile", "gomod", "pip_requirements"],
-  "labels": ["dependencies"],
-  "packageRules": [
-    {
-      "description": "Pin digests for all GitHub Actions (Scorecards requirement)",
-      "matchManagers": ["github-actions"],
-      "pinDigests": true
-    },
-    {
-      "description": "Auto-update rolling TomTonic/grype_me action (nightly rebuild around 06:53 UTC)",
-      "matchManagers": ["github-actions"],
-      "matchPackageNames": ["TomTonic/grype_me"],
-      "groupName": "github-actions-grype_me-only",
-      "schedule": ["after 07:15 and before 07:55"],
-      "automerge": true,
-      "automergeType": "branch",
-      "platformAutomerge": true,
-      "rebaseWhen": "behind-base-branch"
-    },
-    {
-      "description": "Group routine GitHub Actions bumps (excluding TomTonic/grype_me)",
-      "matchManagers": ["github-actions"],
-      "groupName": "github-actions",
-      "matchPackageNames": [
-        "!TomTonic/grype_me"
-      ]
-    },
-    {
-      "description": "Pin and update Docker base images with digests",
-      "matchManagers": ["dockerfile"],
-      "pinDigests": true,
-      "groupName": "docker-base-images"
-    },
-    {
-      "description": "Manage pinned yamllint requirements",
-      "matchManagers": ["pip_requirements"],
-      "matchFileNames": [".github/workflows/yamllint-requirements.txt"],
-      "groupName": "python-lint"
-    },
-    {
-      "matchManagers": ["gomod"],
-      "matchDepNames": ["go"],
-      "matchDepTypes": ["golang"],
-      "rangeStrategy": "bump"
-    },
-    {
-      "matchManagers": ["gomod"],
-      "matchDepTypes": ["indirect"],
-      "enabled": true
-    },  
-    {
-      "matchManagers": ["gomod"],
-      "postUpdateOptions": ["gomodTidy"]
-    }
-  ],
-  "prConcurrentLimit": 8,
-  "prHourlyLimit": 4
+  "description": "This renovate.json references the default configuration for Go projects provided by TomTonic. It ensures that all Go dependencies are kept up to date according to the best practices defined in the referenced configuration.",
+  "extends": [
+    "github>TomTonic/go-project-defaults"
+  ]
 }
