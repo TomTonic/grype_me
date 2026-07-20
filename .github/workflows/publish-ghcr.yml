@@ -198,6 +198,11 @@ jobs:
           MY_VER="${MY_VER#v}"                 # strip leading v
           SEMVER="${MY_VER%-release}"          # strip trailing -release if present
 
+          if ! [[ "$SEMVER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version '$MY_VER' is not valid semver (expected vX.Y.Z or vX.Y.Z-release)." >&2
+            exit 1
+          fi
+
           MAJOR="v${SEMVER%%.*}"              # v1
           MINOR="v${SEMVER%.*}"               # v1.2
           PATCH="v${SEMVER}"                  # v1.2.3
