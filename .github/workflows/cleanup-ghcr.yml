@@ -167,10 +167,16 @@ jobs:
 
             core.info(`Nightly images to delete: ${nightliesToDelete.length}`);
 
-            // Also delete untagged versions (usually leftover manifests)
+            // Also delete untagged versions (usually leftover manifests) and versions
+            // whose tags don't match any known tagging scheme (e.g. malformed tags from
+            // a mistyped release, such as "v.1.2.3" instead of "v1.2.3")
             const toDelete = [
               ...nightliesToDelete.map(n => ({ version: n.version, reason: `Old nightly: ${n.tag}` })),
-              ...untaggedVersions.map(v => ({ version: v, reason: 'Untagged' }))
+              ...untaggedVersions.map(v => ({ version: v, reason: 'Untagged' })),
+              ...otherVersions.map(v => ({
+                version: v,
+                reason: `Unrecognized tag format: ${(v.metadata?.container?.tags || []).join(', ')}`
+              }))
             ];
 
             core.info(`Total versions to delete: ${toDelete.length}`);
@@ -181,6 +187,7 @@ jobs:
             }
 
             // Delete versions
+            const failures = [];
             for (const { version, reason } of toDelete) {
               const tags = version.metadata?.container?.tags || [];
               const tagStr = tags.length > 0 ? tags.join(', ') : '(untagged)';
@@ -203,9 +210,14 @@ jobs:
                   }
                   core.info(`Deleted: ${version.id} - ${tagStr} (${reason})`);
                 } catch (error) {
-                  core.warning(`Failed to delete ${version.id}: ${error.message}`);
+                  core.error(`Failed to delete ${version.id} - ${tagStr}: ${error.message}`);
+                  failures.push({ id: version.id, tagStr, message: error.message });
                 }
               }
             }
 
-            core.info('Cleanup complete.');
+            if (failures.length > 0) {
+              core.setFailed(`Cleanup finished with ${failures.length} failed deletion(s) out of ${toDelete.length}.`);
+            } else {
+              core.info('Cleanup complete.');
+            }
