@@ -5,7 +5,7 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -151,8 +151,8 @@ func stripCommitHash(rawURL string) string {
 	rest := rawURL[idx+len("/raw/"):]
 
 	// rest is "<commithash>/<filename>" — strip the hash
-	if slashIdx := strings.Index(rest, "/"); slashIdx >= 0 {
-		return prefix + rest[slashIdx+1:]
+	if _, after, ok := strings.Cut(rest, "/"); ok {
+		return prefix + after
 	}
 	return rawURL
 }

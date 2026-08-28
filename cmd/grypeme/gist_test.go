@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -27,7 +27,7 @@ func TestNewGistClient(t *testing.T) {
 }
 
 func TestUpdateGist_Success(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify method and path
 		if r.Method != http.MethodPatch {
 			t.Errorf("method = %s, want PATCH", r.Method)
@@ -44,7 +44,7 @@ func TestUpdateGist_Success(t *testing.T) {
 
 		// Verify request body
 		var req gistUpdateRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.UnmarshalRead(r.Body, &req); err != nil {
 			t.Fatalf("failed to decode request body: %v", err)
 		}
 		if _, ok := req.Files["grype-release.json"]; !ok {
@@ -63,9 +63,8 @@ func TestUpdateGist_Success(t *testing.T) {
 			},
 		}
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
+		_ = json.MarshalWrite(w, resp)
 	}))
-	defer server.Close()
 
 	client := &GistClient{
 		Token:      "test-token",
@@ -103,13 +102,12 @@ func TestUpdateGist_Success(t *testing.T) {
 }
 
 func TestUpdateGist_APIError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		if _, err := fmt.Fprint(w, `{"message":"Not Found"}`); err != nil {
 			t.Fatalf("failed to write response: %v", err)
 		}
 	}))
-	defer server.Close()
 
 	client := &GistClient{
 		Token:      "bad-token",
@@ -130,13 +128,12 @@ func TestUpdateGist_APIError(t *testing.T) {
 }
 
 func TestUpdateGist_Unauthorized(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		if _, err := fmt.Fprint(w, `{"message":"Bad credentials"}`); err != nil {
 			t.Fatalf("failed to write response: %v", err)
 		}
 	}))
-	defer server.Close()
 
 	client := &GistClient{
 		Token:      "invalid",
@@ -258,7 +255,7 @@ func TestBuildGistFileAnchor(t *testing.T) {
 }
 
 func TestUpdateGist_VerifiesRequestHeaders(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify all required headers
 		if got := r.Header.Get("Accept"); got != "application/vnd.github+json" {
 			t.Errorf("Accept = %q, want %q", got, "application/vnd.github+json")
@@ -275,9 +272,8 @@ func TestUpdateGist_VerifiesRequestHeaders(t *testing.T) {
 			Files:   map[string]gistFileInfo{},
 		}
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
+		_ = json.MarshalWrite(w, resp)
 	}))
-	defer server.Close()
 
 	client := &GistClient{
 		Token:      "tok",
