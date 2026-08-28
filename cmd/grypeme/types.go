@@ -34,7 +34,7 @@ type GrypeOutput struct {
 			// Status contains database metadata for newer Grype versions (>= 0.106).
 			Status struct {
 				Built string `json:"built,omitempty"` // Database build timestamp
-			} `json:"status,omitempty"`
+			} `json:"status"`
 		} `json:"db"`
 	} `json:"descriptor"`
 }

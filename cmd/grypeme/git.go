@@ -151,7 +151,7 @@ func parseTagVersion(tag string) (tagVersion, bool) {
 	}
 
 	values := []int{0, 0, 0}
-	for i := 0; i < len(nums); i++ {
+	for i := range nums {
 		if nums[i] == "" {
 			return tagVersion{}, false
 		}
