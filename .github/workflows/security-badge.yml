@@ -116,7 +116,7 @@ jobs:
 
       - name: Scan latest release of GitHub Action
         id: grype_me_release
-        uses: TomTonic/grype_me@a5724a80a4dad9b21b0f45a054f05dd8e5c0c620 # v1
+        uses: TomTonic/grype_me@2aa5ae90ff07b42476a621907606b92d31aebd88 # v1
         with:
           scan: 'latest_release'
           description: |
@@ -129,7 +129,7 @@ jobs:
 
       - name: Scan nightly Docker image
         id: grype_me_image
-        uses: TomTonic/grype_me@a5724a80a4dad9b21b0f45a054f05dd8e5c0c620 # v1
+        uses: TomTonic/grype_me@2aa5ae90ff07b42476a621907606b92d31aebd88 # v1
         with:
           image: ghcr.io/tomtonic/grype_me:latest
           image-source: registry
