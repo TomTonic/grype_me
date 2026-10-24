@@ -1,7 +1,7 @@
 # Hash-locked dependencies for yamllint in CI
-importlib-metadata==9.0.1 \
-    --hash=sha256:ab830580bc0ef3db61ce8fae716389e5462b67e033018bab6d8f80ef17172f99 \
-    --hash=sha256:bba5600596a7e21f3eef53281cf28d6a5195634d2f2b78ff9501a3272c6eaab0
+importlib-metadata==9.1.0 \
+    --hash=sha256:626c65eddcd23c0ee0ffb17567aa882f8cfce0e552c424f2fa37c8b679374078 \
+    --hash=sha256:9607fb24f95d4e0b1c17d57ec4604357d76d3f0d154f19fd4861f2e31c8e4065
 packaging==26.3 \
     --hash=sha256:94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79 \
     --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
