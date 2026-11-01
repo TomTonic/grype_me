@@ -1,0 +1,8 @@
+# Project-specific parameters for the release-notes agent.
+core_dependencies:
+  # Grype is not imported as a Go module and not pinned in a file: the
+  # Dockerfile fetches the newest release at image build time (rebuilt daily),
+  # so there is no `pinned_in` entry. It still defines the action's
+  # functionality, so its release notes belong in every changelog scan.
+  - module: github.com/anchore/grype
+    name: grype
