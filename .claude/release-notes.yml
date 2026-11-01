@@ -6,3 +6,14 @@ core_dependencies:
   # functionality, so its release notes belong in every changelog scan.
   - module: github.com/anchore/grype
     name: grype
+
+known_not_applicable:
+  - id: GO-2026-5932
+    reason: >-
+      golang.org/x/crypto/openpgp is unmaintained and has no upstream fix. It
+      is only pulled in transitively by go-git; govulncheck confirms the
+      action neither imports nor calls the affected package.
+
+changelog_sources:
+  - module: github.com/anchore/grype
+    url: https://github.com/anchore/grype/releases
